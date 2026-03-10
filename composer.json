@@ -1,0 +1,36 @@
+{
+  "name": "lm2k/craft-hyper-to-link",
+  "description": "Console-driven Craft CMS migration plugin for moving Verbb Hyper fields to Craft native Link fields.",
+  "type": "craft-plugin",
+  "license": "proprietary",
+  "require": {
+    "php": "^8.2",
+    "craftcms/cms": "^5.3"
+  },
+  "require-dev": {
+    "codeception/module-asserts": "^3.2",
+    "codeception/module-yii2": "^2.0",
+    "codeception/phpunit-wrapper": "^11.0",
+    "craftcms/test": "^3.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "lm2k\\hypertolink\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "lm2k\\hypertolink\\tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "name": "Hyper to Link",
+    "handle": "hyper-to-link",
+    "class": "lm2k\\hypertolink\\HyperToLink",
+    "developer": "lm2k",
+    "developerUrl": "https://example.com"
+  },
+  "scripts": {
+    "test": "php vendor/bin/codecept run"
+  }
+}
