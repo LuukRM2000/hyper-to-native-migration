@@ -10,6 +10,59 @@ use lm2k\hypertolink\models\FieldAudit;
 
 class AuditService extends Component
 {
+    private const MISMATCH_PATTERNS = [
+        [
+            'pattern' => '.text',
+            'replacement' => '.label',
+            'reason' => 'Hyper commonly exposes link text via `.text`; Craft LinkData uses `.label`.',
+        ],
+        [
+            'pattern' => '.linkText',
+            'replacement' => '.label',
+            'reason' => 'Hyper `linkText` should usually become Craft LinkData `.label`.',
+        ],
+        [
+            'pattern' => 'linkValue',
+            'replacement' => 'value or url',
+            'reason' => 'Hyper `linkValue` maps to `value` for the raw stored value or `url` for rendered href output.',
+        ],
+        [
+            'pattern' => 'getLink(',
+            'replacement' => 'link.url plus manual <a> rendering',
+            'reason' => 'Hyper `getLink()` returns rendered markup; Craft LinkData should be rendered explicitly in Twig.',
+        ],
+        [
+            'pattern' => 'getHtml(',
+            'replacement' => 'manual rendering',
+            'reason' => 'Hyper embed/html helpers do not exist on Craft LinkData.',
+        ],
+        [
+            'pattern' => 'getData(',
+            'replacement' => 'manual mapping or backup-only data',
+            'reason' => 'Hyper embed/provider payload helpers do not exist on Craft LinkData.',
+        ],
+        [
+            'pattern' => 'getElement(',
+            'replacement' => '.element',
+            'reason' => 'Craft LinkData exposes relational targets through `.element` instead of `getElement()`.',
+        ],
+        [
+            'pattern' => 'hasElement(',
+            'replacement' => 'if link.element',
+            'reason' => 'Craft LinkData does not provide `hasElement()`; check `.element` directly.',
+        ],
+        [
+            'pattern' => 'verbb\\hyper\\links\\',
+            'replacement' => 'entry, asset, category, email, phone, sms, url',
+            'reason' => 'Hyper type checks often use class names; Craft LinkData `.type` uses short handles.',
+        ],
+        [
+            'pattern' => 'verbb\\\\hyper\\\\links\\\\',
+            'replacement' => 'entry, asset, category, email, phone, sms, url',
+            'reason' => 'Escaped Hyper class-name checks in PHP strings must be rewritten to Craft LinkData short handles.',
+        ],
+    ];
+
     public function buildAudit(?string $fieldHandle = null): AuditResult
     {
         $result = new AuditResult();
@@ -50,6 +103,7 @@ class AuditService extends Component
         }
 
         $result->codeReferences = $this->findCodeReferences();
+        $result->mismatchReferences = $this->findMismatchReferences();
         $result->notes = [
             'Hyper must remain installed during content migration so existing field values can still be normalized.',
             'Content migration should be rerun in each environment because content is environment-specific.',
@@ -121,8 +175,11 @@ class AuditService extends Component
         $patterns = [
             '.url',
             '.text',
+            '.linkText',
             '.target',
             'getLink(',
+            'getHtml(',
+            'getData(',
             'linkValue',
             '.type',
             'getElement(',
@@ -171,5 +228,54 @@ class AuditService extends Component
         }
 
         return $references;
+    }
+
+    public function findMismatchReferences(): array
+    {
+        $roots = [
+            Craft::getAlias('@root/templates'),
+            Craft::getAlias('@root/modules'),
+            Craft::getAlias('@root/src'),
+            Craft::getAlias('@root/config'),
+        ];
+
+        $matches = [];
+
+        foreach ($roots as $root) {
+            if (!$root || !is_dir($root)) {
+                continue;
+            }
+
+            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
+            foreach ($iterator as $fileInfo) {
+                if (!$fileInfo->isFile()) {
+                    continue;
+                }
+
+                $contents = @file($fileInfo->getPathname());
+                if ($contents === false) {
+                    continue;
+                }
+
+                foreach ($contents as $lineNumber => $line) {
+                    foreach (self::MISMATCH_PATTERNS as $mismatch) {
+                        if (!str_contains($line, $mismatch['pattern'])) {
+                            continue;
+                        }
+
+                        $matches[] = [
+                            'file' => $fileInfo->getPathname(),
+                            'line' => $lineNumber + 1,
+                            'pattern' => $mismatch['pattern'],
+                            'replacement' => $mismatch['replacement'],
+                            'reason' => $mismatch['reason'],
+                            'snippet' => trim($line),
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $matches;
     }
 }

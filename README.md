@@ -37,7 +37,24 @@ ddev craft plugin/install hyper-to-link
 
 ## Quick Start
 
-Run the migration in this order:
+For a full end-to-end run, use the orchestration command:
+
+```bash
+php craft hyper-to-link/migrate/all --dry-run=1 --create-backup=1
+php craft hyper-to-link/migrate/all --force=1 --create-backup=1 --batch-size=100
+```
+
+`migrate/all` runs audit, field migration, project config apply, and content migration in sequence. During dry runs it skips `project-config/apply` automatically.
+
+To scan templates and module code for common Hyper-to-Link API mismatches before or after migration, run:
+
+```bash
+php craft hyper-to-link/migrate/mismatches
+```
+
+This reports common breakpoints like `.text`, `.linkText`, `linkValue`, `getElement()`, `hasElement()`, `getLink()`, and Hyper class-name type checks.
+
+If you want to run each stage manually, use this order:
 
 ```bash
 php craft hyper-to-link/migrate/audit --dry-run=1
@@ -108,6 +125,18 @@ The plugin also records per-element migration state in `{{%hypertolink_migration
 ## Template Impact
 
 See [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md) for template changes to make after moving from Hyper values to native Link values.
+
+## Potential Template and API Errors After Migration
+
+Hyper and Craft's native Link field are not API-identical, even when the migrated content is valid.
+
+- Hyper templates often use `.text`, `.linkText`, or `.linkValue`; Craft Link fields expose `label`, `value`, and `url` on `craft\\fields\\data\\LinkData`. Old templates can render empty values or fail when they keep reading Hyper-only properties.
+- Hyper type checks often compare against full class names like `verbb\\hyper\\links\\Entry`; Craft Link uses short type handles like `entry`, `asset`, `email`, and `url`. Existing Twig conditionals and headless transforms can silently route to the wrong branch.
+- Hyper exposes `hasElement()` and `getElement()` helpers for element links, while Craft Link exposes the related element via `.element`. Code that calls Hyper-specific methods must be rewritten.
+- Hyper supports multi-link fields, embed links, site links, user links, custom link types, per-link custom fields, `getHtml()`, and `getData()`. Craft's native Link field does not. Any frontend code that depends on those APIs can throw errors or lose output until it is rewritten.
+- Hyper's GraphQL output is array-based even for single-link fields, while Craft Link fields default to a rendered string unless the field's GraphQL mode is switched to `Full data`. Headless consumers can break if they still expect Hyper's shape.
+
+Review [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md) before running the content migration on production.
 
 ## Support
 

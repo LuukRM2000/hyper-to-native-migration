@@ -39,6 +39,7 @@ class ReportService extends Component
                 'partial' => count(array_filter($audit->fields, fn($field) => $field->mapping->status === 'partial')),
                 'unsupported' => count(array_filter($audit->fields, fn($field) => $field->mapping->status === 'unsupported')),
                 'references' => count($audit->codeReferences),
+                'mismatches' => count($audit->mismatchReferences),
             ],
             'fields' => array_map(function ($field) {
                 return [
@@ -54,6 +55,7 @@ class ReportService extends Component
                 ];
             }, $audit->fields),
             'references' => $audit->codeReferences,
+            'mismatches' => $audit->mismatchReferences,
             'notes' => $audit->notes,
         ];
 
