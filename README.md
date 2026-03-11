@@ -20,13 +20,6 @@ composer require lm2k/craft-hyper-to-link
 php craft plugin/install hyper-to-link
 ```
 
-If you use DDEV:
-
-```bash
-ddev composer require lm2k/craft-hyper-to-link
-ddev craft plugin/install hyper-to-link
-```
-
 ## What It Does
 
 - Audits Hyper field usage before any destructive changes are made
