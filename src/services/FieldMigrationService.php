@@ -80,20 +80,19 @@ class FieldMigrationService extends Component
     private function buildLinkFieldConfig(object $existingField, MappingDecision $mapping): Link
     {
         $config = [
-            'groupId' => $existingField->groupId,
             'name' => $existingField->name,
             'handle' => $existingField->handle,
-            'instructions' => $existingField->instructions,
-            'translationMethod' => $existingField->translationMethod,
-            'translationKeyFormat' => $existingField->translationKeyFormat,
-            'searchable' => $existingField->searchable,
-            'required' => $existingField->required,
-            'tip' => $existingField->tip,
-            'warning' => $existingField->warning,
-            'uid' => $existingField->uid,
-            'linkTypes' => $mapping->craftLinkTypes,
+            'types' => $mapping->craftLinkTypes,
             'showLabelField' => in_array('label', $mapping->advancedFields, true),
         ];
+
+        foreach (['instructions', 'translationMethod', 'translationKeyFormat', 'searchable', 'required', 'tip', 'warning', 'uid'] as $property) {
+            try {
+                $config[$property] = $existingField->{$property};
+            } catch (\Throwable) {
+                // Hyper/Craft field models do not expose all historical field properties on Craft 5.
+            }
+        }
 
         if ($this->supportsAdvancedFields()) {
             $config['advancedFields'] = array_values(array_filter(

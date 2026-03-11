@@ -12,7 +12,7 @@ class ContentMigrationResult extends Model
     public array $errors = [];
     public array $backups = [];
 
-    public function hasErrors(): bool
+    public function hasErrors($attribute = null): bool
     {
         return $this->errors !== [];
     }

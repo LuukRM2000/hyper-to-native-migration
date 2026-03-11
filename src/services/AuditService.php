@@ -24,7 +24,7 @@ class AuditService extends Component
                 continue;
             }
 
-            $settings = $field->getAttributes();
+            $settings = array_merge($field->getAttributes(), method_exists($field, 'getSettings') ? $field->getSettings() : []);
             $linkTypes = $this->extractLinkTypes($settings);
             $fieldLayouts = $this->extractCustomFieldLayouts($settings);
             $multi = (bool)($settings['multipleLinks'] ?? $settings['allowMultiple'] ?? false);
