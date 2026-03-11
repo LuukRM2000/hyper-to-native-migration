@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title>Hyper to Link icon</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f3d3e"/>
+      <stop offset="100%" stop-color="#1f8a70"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffd166"/>
+      <stop offset="100%" stop-color="#f4a261"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <path d="M33 42c0-7.2 5.8-13 13-13h13c7.2 0 13 5.8 13 13v6h-12v-4a3 3 0 0 0-3-3H48a3 3 0 0 0-3 3v13a3 3 0 0 0 3 3h11v12H46c-7.2 0-13-5.8-13-13V42Zm23 46v-12h16a3 3 0 0 0 3-3V60a3 3 0 0 0-3-3H61V45h13c7.2 0 13 5.8 13 13v17c0 7.2-5.8 13-13 13H56Z" fill="#f2f7f2"/>
+  <path d="M48 70h20" fill="none" stroke="#f2f7f2" stroke-linecap="round" stroke-width="10"/>
+  <path d="M63 88l28-24-28-24" fill="none" stroke="url(#accent)" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
+</svg>

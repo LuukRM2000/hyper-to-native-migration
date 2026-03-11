@@ -1,51 +1,43 @@
 # Hyper to Link
 
-Console-first Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field in two explicit steps:
+Hyper to Link is a Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field with an explicit, reviewable CLI workflow.
 
-1. field/config migration
-2. content migration
-
-The plugin is intentionally boring:
-
-- no CP UI
-- no abstract migration platform
-- no automatic Hyper uninstall
-- strict unsupported-case reporting
-- dry runs, `--force`, backups, resumability, and written reports
+It is designed for teams that want to move off Hyper without a black-box migration step. You can audit current usage, migrate field configuration, migrate stored content, and keep written reports for every run.
 
 ## Requirements
 
 - PHP 8.2+
 - Craft CMS 5.3+
-- Verbb Hyper must stay installed during the migration
-- Recommended: Craft 5.6+ if you want all native Link advanced fields available
+- Verbb Hyper must remain installed until both migration phases are complete
+- Recommended: Craft 5.6+ if you want the full native Link field feature set
 
-## Install
+## Installation
 
-Add the plugin as a path repository or package, then install it:
-
-```json
-{
-  "repositories": [
-    {
-      "type": "path",
-      "url": "plugins/hyper-to-link"
-    }
-  ],
-  "require": {
-    "lm2k/craft-hyper-to-link": "*"
-  }
-}
-```
-
-Then run:
+Install the plugin with Composer:
 
 ```bash
-composer install
+composer require lm2k/craft-hyper-to-link
 php craft plugin/install hyper-to-link
 ```
 
-## Commands
+If you use DDEV:
+
+```bash
+ddev composer require lm2k/craft-hyper-to-link
+ddev craft plugin/install hyper-to-link
+```
+
+## What It Does
+
+- Audits Hyper field usage before any destructive changes are made
+- Migrates Hyper field definitions to native Link field definitions
+- Migrates stored element content in a separate step
+- Supports dry runs, `--force`, backups, resumability, and written reports
+- Leaves unsupported cases visible in reports instead of silently coercing data
+
+## Quick Start
+
+Run the migration in this order:
 
 ```bash
 php craft hyper-to-link/migrate/audit --dry-run=1
@@ -57,7 +49,7 @@ php craft hyper-to-link/migrate/content --force=1 --create-backup=1 --batch-size
 php craft hyper-to-link/migrate/rollback-info
 ```
 
-Single field:
+Single-field migrations are also supported:
 
 ```bash
 php craft hyper-to-link/migrate/fields --field=ctaLink --dry-run=1
@@ -89,10 +81,10 @@ Partially supported:
 Unsupported or lossy:
 
 - Hyper fields allowing multiple links
-- custom Hyper link types from plugins/custom code
+- custom Hyper link types from plugins or custom code
 - custom field layouts on Hyper link types
 - embed-only data
-- user/site/plugin-specific link types without a native Link equivalent
+- user, site, or plugin-specific link types without a native Link equivalent
 
 Unsupported values are skipped and reported. They are not silently coerced.
 
@@ -104,15 +96,21 @@ Each run writes:
 - a log report
 - optional per-element backup JSON payloads when `--create-backup=1`
 
-Location:
+Output is written to:
 
 ```text
 storage/runtime/hyper-to-link/
 storage/runtime/hyper-to-link/backups/
 ```
 
-The plugin also records per-element migration state in `{{%hypertolink_migrations}}` so content migration can be resumed safely.
+The plugin also records per-element migration state in `{{%hypertolink_migrations}}` so content migration can be resumed safely after interruptions.
 
 ## Template Impact
 
-See [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md).
+See [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md) for template changes to make after moving from Hyper values to native Link values.
+
+## Support
+
+Report bugs or migration edge cases here:
+
+- https://github.com/LuukRM2000/hyper-to-native-migration/issues

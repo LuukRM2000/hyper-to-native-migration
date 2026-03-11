@@ -1,8 +1,29 @@
 {
   "name": "lm2k/craft-hyper-to-link",
-  "description": "Console-driven Craft CMS migration plugin for moving Verbb Hyper fields to Craft native Link fields.",
+  "description": "Migrate Verbb Hyper fields and content to Craft's native Link field with CLI audit and migration commands.",
   "type": "craft-plugin",
+  "keywords": [
+    "craftcms",
+    "craft-plugin",
+    "migration",
+    "hyper",
+    "link",
+    "cli"
+  ],
   "license": "proprietary",
+  "authors": [
+    {
+      "name": "Luuk Molenbeek",
+      "homepage": "https://github.com/LuukRM2000"
+    }
+  ],
+  "homepage": "https://github.com/LuukRM2000/hyper-to-native-migration",
+  "support": {
+    "issues": "https://github.com/LuukRM2000/hyper-to-native-migration/issues",
+    "source": "https://github.com/LuukRM2000/hyper-to-native-migration",
+    "docs": "https://github.com/LuukRM2000/hyper-to-native-migration/blob/main/README.md",
+    "rss": "https://github.com/LuukRM2000/hyper-to-native-migration/commits/main.atom"
+  },
   "require": {
     "php": "^8.2",
     "craftcms/cms": "^5.3"
@@ -26,9 +47,13 @@
   "extra": {
     "name": "Hyper to Link",
     "handle": "hyper-to-link",
+    "description": "CLI-first migration tooling for moving Verbb Hyper fields and content to Craft's native Link field.",
     "class": "lm2k\\hypertolink\\HyperToLink",
-    "developer": "lm2k",
-    "developerUrl": "https://example.com"
+    "schemaVersion": "1.0.0",
+    "developer": "Luuk Molenbeek",
+    "developerUrl": "https://github.com/LuukRM2000",
+    "documentationUrl": "https://github.com/LuukRM2000/hyper-to-native-migration/blob/main/README.md",
+    "changelogUrl": "https://raw.githubusercontent.com/LuukRM2000/hyper-to-native-migration/main/CHANGELOG.md"
   },
   "scripts": {
     "test": "php vendor/bin/codecept run"
