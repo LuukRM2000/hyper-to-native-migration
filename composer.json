@@ -13,7 +13,7 @@
   "license": "proprietary",
   "authors": [
     {
-      "name": "Luuk Molenbeek",
+      "name": "LuukRM",
       "homepage": "https://github.com/LuukRM2000"
     }
   ],
@@ -45,12 +45,12 @@
     }
   },
   "extra": {
-    "name": "Hyper to Link",
+    "name": "Native Link Migrator",
     "handle": "hyper-to-link",
     "description": "CLI-first migration tooling for moving Verbb Hyper fields and content to Craft's native Link field.",
     "class": "lm2k\\hypertolink\\HyperToLink",
     "schemaVersion": "1.0.0",
-    "developer": "Luuk Molenbeek",
+    "developer": "LuukRM",
     "developerUrl": "https://github.com/LuukRM2000",
     "documentationUrl": "https://github.com/LuukRM2000/hyper-to-native-migration/blob/main/README.md",
     "changelogUrl": "https://raw.githubusercontent.com/LuukRM2000/hyper-to-native-migration/main/CHANGELOG.md"

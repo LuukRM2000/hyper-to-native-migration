@@ -1,19 +1,38 @@
-# Hyper to Link
+# Native Link Migrator
 
-Hyper to Link is a Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field with an explicit, reviewable CLI workflow.
+Native Link Migrator is a CLI-first Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field.
 
-It is designed for teams that want to move off Hyper without a black-box migration step. You can audit current usage, migrate field configuration, migrate stored content, and keep written reports for every run.
+It is built for teams that want a migration they can inspect, dry-run, report on, and resume. There is no control panel UI and no black-box "convert everything" button. The plugin splits the work into explicit stages and writes reports for every run.
+
+This plugin is independent and unaffiliated. Verbb Hyper is a plugin by Verbb.
+
+## What This Plugin Does
+
+- Audits Hyper fields before anything is changed
+- Converts supported Hyper field settings into native Craft Link field settings
+- Migrates existing element content in a separate step
+- Writes JSON and log reports for every run
+- Optionally writes per-element backup payloads before content changes
+- Tracks migration state so content migration can resume safely
+- Scans your templates and modules for common Hyper-to-Link API mismatches
+
+## What This Plugin Does Not Do
+
+- It does not provide a CP UI
+- It does not uninstall Hyper for you
+- It does not migrate unsupported Hyper link types into some guessed equivalent
+- It does not preserve Hyper-only APIs like embed helpers, custom per-link fields, or multi-link field behavior
 
 ## Requirements
 
 - PHP 8.2+
 - Craft CMS 5.3+
-- Verbb Hyper must remain installed until both migration phases are complete
-- Recommended: Craft 5.6+ if you want the full native Link field feature set
+- Verbb Hyper must remain installed until field migration and content migration are both complete
+- Recommended: Craft 5.6+ if you want the fuller native Link advanced field set
 
 ## Installation
 
-Install the plugin with Composer:
+Install from Composer:
 
 ```bash
 composer require lm2k/craft-hyper-to-link
@@ -27,34 +46,32 @@ ddev composer require lm2k/craft-hyper-to-link
 ddev craft plugin/install hyper-to-link
 ```
 
-## What It Does
+## Recommended Workflow
 
-- Audits Hyper field usage before any destructive changes are made
-- Migrates Hyper field definitions to native Link field definitions
-- Migrates stored element content in a separate step
-- Supports dry runs, `--force`, backups, resumability, and written reports
-- Leaves unsupported cases visible in reports instead of silently coercing data
-
-## Quick Start
-
-For a full end-to-end run, use the orchestration command:
+For most projects, use the orchestration command:
 
 ```bash
 php craft hyper-to-link/migrate/all --dry-run=1 --create-backup=1
 php craft hyper-to-link/migrate/all --force=1 --create-backup=1 --batch-size=100
 ```
 
-`migrate/all` runs audit, field migration, project config apply, and content migration in sequence. During dry runs it skips `project-config/apply` automatically.
+`migrate/all` runs:
 
-To scan templates and module code for common Hyper-to-Link API mismatches before or after migration, run:
+1. `audit`
+2. `fields`
+3. `project-config/apply`
+4. `content`
 
-```bash
-php craft hyper-to-link/migrate/mismatches
-```
+Notes:
 
-This reports common breakpoints like `.text`, `.linkText`, `linkValue`, `getElement()`, `hasElement()`, `getLink()`, and Hyper class-name type checks.
+- In dry-run mode, `project-config/apply` is skipped automatically.
+- In write mode, the command refuses to run unless `--force=1` is provided.
+- You can skip project config apply explicitly with `--apply-project-config=0`.
+- `--batch-size=100` means the content migration processes 100 elements at a time.
 
-If you want to run each stage manually, use this order:
+## Manual Workflow
+
+If you want to inspect every stage yourself, run:
 
 ```bash
 php craft hyper-to-link/migrate/audit --dry-run=1
@@ -66,16 +83,93 @@ php craft hyper-to-link/migrate/content --force=1 --create-backup=1 --batch-size
 php craft hyper-to-link/migrate/rollback-info
 ```
 
-Single-field migrations are also supported:
+A single-field run is also supported:
 
 ```bash
 php craft hyper-to-link/migrate/fields --field=ctaLink --dry-run=1
 php craft hyper-to-link/migrate/content --field=ctaLink --force=1 --create-backup=1
 ```
 
-## Supported Mapping
+## Commands
 
-Fully supported:
+### `hyper-to-link/migrate/all`
+
+Runs audit, field migration, project config apply, and content migration in sequence.
+
+Common options:
+
+- `--dry-run=1`
+- `--force=1`
+- `--field=handle`
+- `--create-backup=1`
+- `--batch-size=100`
+- `--apply-project-config=0`
+- `--verbose=1`
+
+### `hyper-to-link/migrate/audit`
+
+Builds an audit of Hyper fields, supported mappings, unsupported cases, code references, and mismatch candidates.
+
+Useful when:
+
+- you want to know which Hyper fields are migratable
+- you want to see unsupported link types before changing anything
+- you want a machine-readable report of the current state
+
+### `hyper-to-link/migrate/fields`
+
+Migrates supported Hyper field definitions to Craft Link field definitions.
+
+Important:
+
+- non-dry runs require `--force=1`
+- unsupported fields are skipped
+- this changes field configuration, not content
+
+### `hyper-to-link/migrate/content`
+
+Migrates existing content values into `craft\fields\data\LinkData`.
+
+Important:
+
+- non-dry runs require `--force=1`
+- content writes are resumable
+- already migrated element/site pairs are skipped on later runs
+- optional backups are written before content is changed
+
+### `hyper-to-link/migrate/mismatches`
+
+Scans templates, modules, `src`, and config for common Hyper-only API usage that usually breaks after migration.
+
+Examples it flags:
+
+- `.text`
+- `.linkText`
+- `linkValue`
+- `getLink()`
+- `getElement()`
+- `hasElement()`
+- `getHtml()`
+- `getData()`
+- Hyper class-name type checks such as `verbb\hyper\links\Entry`
+
+This command exits non-zero if mismatches are found, which makes it useful in CI or migration checklists.
+
+### `hyper-to-link/migrate/rollback-info`
+
+Shows informational summaries from the plugin's migration state table:
+
+- migrated counts
+- skipped counts
+- warning counts
+- backup counts
+- last update time
+
+It does not automatically roll anything back.
+
+## Supported Mappings
+
+Fully supported link types:
 
 - URL -> URL
 - Entry -> Entry
@@ -85,7 +179,7 @@ Fully supported:
 - Phone -> Phone
 - SMS -> SMS
 
-Partially supported:
+Migrated advanced attributes:
 
 - label/text
 - target/new tab
@@ -95,51 +189,95 @@ Partially supported:
 - id
 - rel
 
-Unsupported or lossy:
+Partially supported or lossy cases:
+
+- custom field layouts on Hyper link types are not migrated
+- Hyper fields with broad link-type allowances should be checked after migration
+- custom link field data is preserved in backups, not converted into native Link data
+
+Unsupported cases:
 
 - Hyper fields allowing multiple links
 - custom Hyper link types from plugins or custom code
-- custom field layouts on Hyper link types
 - embed-only data
-- user, site, or plugin-specific link types without a native Link equivalent
+- user/site/plugin-specific link types without a native Link equivalent
 
 Unsupported values are skipped and reported. They are not silently coerced.
 
-## Reports and Backups
+## What Gets Persisted
 
-Each run writes:
+### Reports
+
+Every run writes:
 
 - a JSON report
 - a log report
-- optional per-element backup JSON payloads when `--create-backup=1`
 
-Output is written to:
+Stored in:
 
 ```text
 storage/runtime/hyper-to-link/
+```
+
+### Optional backups
+
+When `--create-backup=1` is used during content migration, per-element backup payloads are written to:
+
+```text
 storage/runtime/hyper-to-link/backups/
 ```
 
-The plugin also records per-element migration state in `{{%hypertolink_migrations}}` so content migration can be resumed safely after interruptions.
+### Migration state
 
-## Template Impact
+The plugin stores per-element migration state in:
 
-See [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md) for template changes to make after moving from Hyper values to native Link values.
+```text
+{{%hypertolink_migrations}}
+```
 
-## Potential Template and API Errors After Migration
+This is what allows content migration to skip already migrated element/site pairs and resume safely after interruptions.
 
-Hyper and Craft's native Link field are not API-identical, even when the migrated content is valid.
+## Template and API Differences You Must Review
 
-- Hyper templates often use `.text`, `.linkText`, or `.linkValue`; Craft Link fields expose `label`, `value`, and `url` on `craft\\fields\\data\\LinkData`. Old templates can render empty values or fail when they keep reading Hyper-only properties.
-- Hyper type checks often compare against full class names like `verbb\\hyper\\links\\Entry`; Craft Link uses short type handles like `entry`, `asset`, `email`, and `url`. Existing Twig conditionals and headless transforms can silently route to the wrong branch.
-- Hyper exposes `hasElement()` and `getElement()` helpers for element links, while Craft Link exposes the related element via `.element`. Code that calls Hyper-specific methods must be rewritten.
-- Hyper supports multi-link fields, embed links, site links, user links, custom link types, per-link custom fields, `getHtml()`, and `getData()`. Craft's native Link field does not. Any frontend code that depends on those APIs can throw errors or lose output until it is rewritten.
-- Hyper's GraphQL output is array-based even for single-link fields, while Craft Link fields default to a rendered string unless the field's GraphQL mode is switched to `Full data`. Headless consumers can break if they still expect Hyper's shape.
+Hyper and Craft's native Link field are not API-identical, even when the content migration succeeds.
 
-Review [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md) before running the content migration on production.
+Common breakpoints:
+
+- Hyper `.text` or `.linkText` usually becomes LinkData `.label`
+- Hyper `linkValue` becomes LinkData `value` or `url`, depending on what your template really needs
+- Hyper `getElement()` and `hasElement()` become checks against `.element`
+- Hyper class-name type checks become short Craft type handles like `entry`, `asset`, or `url`
+- Hyper-only helpers like `getHtml()` and `getData()` do not exist on native Link values
+- Hyper GraphQL output shape differs from Craft Link GraphQL output
+
+Read [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md) before running the content migration in production.
+
+## Safety Notes
+
+- Back up the database and project config before any non-dry run
+- Keep Hyper installed until reports are clean and templates are updated
+- Run content migration separately in each environment because content is environment-specific
+- Treat `migrate/mismatches` as a guide, not a proof that every template issue has been found
+- `rollback-info` is informational only; it is not an automatic restore command
+
+## Typical Example
+
+Dry run everything first:
+
+```bash
+php craft hyper-to-link/migrate/mismatches
+php craft hyper-to-link/migrate/all --dry-run=1 --create-backup=1
+```
+
+Then perform the real migration:
+
+```bash
+php craft hyper-to-link/migrate/all --force=1 --create-backup=1 --batch-size=100
+php craft hyper-to-link/migrate/rollback-info
+```
 
 ## Support
 
-Report bugs or migration edge cases here:
+Report bugs and migration edge cases here:
 
 - https://github.com/LuukRM2000/hyper-to-native-migration/issues
