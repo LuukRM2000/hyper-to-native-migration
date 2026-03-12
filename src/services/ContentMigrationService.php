@@ -5,6 +5,7 @@ namespace lm2k\hypertolink\services;
 use Craft;
 use craft\base\Component;
 use craft\base\ElementInterface;
+use craft\db\Query;
 use craft\elements\Asset;
 use craft\elements\Category;
 use craft\elements\Entry;
@@ -12,6 +13,7 @@ use craft\elements\db\ElementQuery;
 use lm2k\hypertolink\HyperToLink;
 use lm2k\hypertolink\models\AuditResult;
 use lm2k\hypertolink\models\ContentMigrationResult;
+use lm2k\hypertolink\models\FieldAudit;
 use lm2k\hypertolink\models\MappingDecision;
 
 class ContentMigrationService extends Component
@@ -37,7 +39,9 @@ class ContentMigrationService extends Component
             foreach ($this->buildElementQueries($fieldAudit->containers) as $query) {
                 foreach ($query->batch($batchSize) as $batch) {
                     foreach ($batch as $element) {
-                        if (!$this->elementSupportsField($element, $fieldAudit->handle, $layoutIds)) {
+                        $fieldContext = $this->resolveFieldContext($element, $fieldAudit->fieldId);
+                        $runtimeFieldHandle = $fieldContext['runtimeHandle'] ?? null;
+                        if ($runtimeFieldHandle === null || !$this->elementSupportsField($element, $runtimeFieldHandle, $layoutIds)) {
                             continue;
                         }
 
@@ -51,7 +55,7 @@ class ContentMigrationService extends Component
                                 continue;
                             }
 
-                            $value = $this->getStoredFieldValue($element, $fieldAudit->handle);
+                            $value = $this->getStoredFieldValue($element, $fieldAudit, $fieldContext);
                             if ($this->isNativeLinkValue($value)) {
                                 if (empty($options['dryRun'])) {
                                     HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Already a native Link value.');
@@ -107,7 +111,7 @@ class ContentMigrationService extends Component
                                 continue;
                             }
 
-                            $element->setFieldValue($fieldAudit->handle, $conversion['payload']);
+                            $element->setFieldValue($runtimeFieldHandle, $conversion['payload']);
                             if (!$elements->saveElement($element, false, false, false)) {
                                 throw new \RuntimeException('saveElement() returned false.');
                             }
@@ -201,10 +205,90 @@ class ContentMigrationService extends Component
         return $fieldLayout->getFieldByHandle($fieldHandle) !== null;
     }
 
-    private function getStoredFieldValue(ElementInterface $element, string $fieldHandle): mixed
+    private function resolveFieldContext(ElementInterface $element, int $fieldId): ?array
     {
+        $fieldLayout = $element->getFieldLayout();
+        if ($fieldLayout === null) {
+            return null;
+        }
+
+        foreach ($fieldLayout->getTabs() as $tab) {
+            foreach ($tab->getElements() as $layoutElement) {
+                if (!method_exists($layoutElement, 'getField')) {
+                    continue;
+                }
+
+                $field = $layoutElement->getField();
+                if ($field && (int)$field->id === $fieldId) {
+                    return [
+                        'runtimeHandle' => (string)$field->handle,
+                        'layoutElementUid' => isset($layoutElement->uid) ? (string)$layoutElement->uid : null,
+                    ];
+                }
+            }
+        }
+
+        foreach ($fieldLayout->getCustomFields() as $field) {
+            if ((int)$field->id === $fieldId) {
+                return [
+                    'runtimeHandle' => (string)$field->handle,
+                    'layoutElementUid' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function getStoredFieldValue(ElementInterface $element, FieldAudit $fieldAudit, array $fieldContext): mixed
+    {
+        $fieldHandle = $fieldContext['runtimeHandle'] ?? null;
+        if (!is_string($fieldHandle) || $fieldHandle === '') {
+            return null;
+        }
+
         $values = $element->getSerializedFieldValues([$fieldHandle]);
-        return $this->unwrapStoredFieldValue($values[$fieldHandle] ?? null);
+        $value = $this->unwrapStoredFieldValue($values[$fieldHandle] ?? null);
+
+        if (!$this->isEmptyHyperValue($value)) {
+            return $value;
+        }
+
+        $rawKeys = array_values(array_filter([
+            $fieldContext['layoutElementUid'] ?? null,
+            $fieldAudit->uid,
+        ], static fn($key) => is_string($key) && $key !== ''));
+
+        return $this->unwrapStoredFieldValue($this->getRawFieldValue($element, $rawKeys));
+    }
+
+    private function getRawFieldValue(ElementInterface $element, array $rawKeys): mixed
+    {
+        $content = (new Query())
+            ->select(['content'])
+            ->from(['{{%elements_sites}}'])
+            ->where([
+                'elementId' => $element->id,
+                'siteId' => $element->siteId,
+            ])
+            ->scalar();
+
+        if (!is_string($content) || $content === '') {
+            return null;
+        }
+
+        $decoded = json_decode($content, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        foreach ($rawKeys as $key) {
+            if (array_key_exists($key, $decoded)) {
+                return $decoded[$key];
+            }
+        }
+
+        return null;
     }
 
     private function unwrapStoredFieldValue(mixed $value): mixed
