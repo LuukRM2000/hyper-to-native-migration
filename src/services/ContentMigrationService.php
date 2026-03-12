@@ -29,10 +29,10 @@ class ContentMigrationService extends Component
 
         foreach ($audit->fields as $fieldAudit) {
             if ($fieldAudit->mapping->status === MappingDecision::STATUS_UNSUPPORTED) {
-                $result->skipped[] = [
+                $result->addSkipped([
                     'field' => $fieldAudit->handle,
                     'reason' => $fieldAudit->mapping->unsupportedReasons,
-                ];
+                ]);
                 continue;
             }
 
@@ -41,11 +41,11 @@ class ContentMigrationService extends Component
                 foreach ($batch as $element) {
                     try {
                         if (HyperToLink::$plugin->getState()->isMigrated('content', $fieldAudit->handle, $element)) {
-                            $result->skipped[] = [
+                            $result->addSkipped([
                                 'field' => $fieldAudit->handle,
                                 'elementId' => $element->id,
                                 'reason' => 'Already migrated.',
-                            ];
+                            ]);
                             continue;
                         }
 
@@ -54,11 +54,11 @@ class ContentMigrationService extends Component
                             if (empty($options['dryRun'])) {
                                 HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Empty value.');
                             }
-                            $result->skipped[] = [
+                            $result->addSkipped([
                                 'field' => $fieldAudit->handle,
                                 'elementId' => $element->id,
                                 'reason' => 'Empty value.',
-                            ];
+                            ]);
                             continue;
                         }
 
@@ -67,29 +67,29 @@ class ContentMigrationService extends Component
                             if (empty($options['dryRun'])) {
                                 HyperToLink::$plugin->getState()->markWarning('content', $fieldAudit->handle, $element, $conversion['warnings'], $conversion['backup']);
                             }
-                            $result->warnings[] = [
+                            $result->addWarning([
                                 'field' => $fieldAudit->handle,
                                 'elementId' => $element->id,
                                 'warnings' => $conversion['warnings'],
-                            ];
+                            ]);
                             continue;
                         }
 
                         $backupPath = null;
                         if (empty($options['dryRun']) && !empty($options['createBackup'])) {
                             $backupPath = HyperToLink::$plugin->getState()->writeBackup('content', $fieldAudit->handle, $element, $conversion['backup']);
-                            $result->backups[] = $backupPath;
+                            $result->addBackup($backupPath);
                         }
 
                         if (!empty($options['dryRun'])) {
-                            $result->migrated[] = [
+                            $result->addMigrated([
                                 'field' => $fieldAudit->handle,
                                 'elementId' => $element->id,
                                 'siteId' => $element->siteId,
                                 'mode' => 'dry-run',
                                 'payload' => $conversion['summary'],
                                 'backupPath' => $backupPath,
-                            ];
+                            ]);
                             continue;
                         }
 
@@ -106,19 +106,19 @@ class ContentMigrationService extends Component
                             $conversion['backup'],
                             $backupPath
                         );
-                        $result->migrated[] = [
+                        $result->addMigrated([
                             'field' => $fieldAudit->handle,
                             'elementId' => $element->id,
                             'siteId' => $element->siteId,
                             'warnings' => $conversion['warnings'],
                             'backupPath' => $backupPath,
-                        ];
+                        ]);
                     } catch (\Throwable $e) {
-                        $result->errors[] = [
+                        $result->addError([
                             'field' => $fieldAudit->handle,
                             'elementId' => $element->id ?? null,
                             'reason' => $e->getMessage(),
-                        ];
+                        ]);
                     }
                 }
             }

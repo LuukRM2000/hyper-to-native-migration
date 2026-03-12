@@ -103,11 +103,19 @@ class ReportService extends Component
     {
         $payload = [
             'summary' => [
-                'migrated' => count($result->migrated),
-                'skipped' => count($result->skipped),
-                'warnings' => count($result->warnings),
-                'errors' => count($result->errors),
-                'backups' => count($result->backups),
+                'migrated' => $result->migratedCount,
+                'skipped' => $result->skippedCount,
+                'warnings' => $result->warningCount,
+                'errors' => $result->errorCount,
+                'backups' => $result->backupCount,
+            ],
+            'detailLimit' => $result->detailLimit(),
+            'truncatedDetails' => [
+                'migrated' => max(0, $result->migratedCount - count($result->migrated)),
+                'skipped' => max(0, $result->skippedCount - count($result->skipped)),
+                'warnings' => max(0, $result->warningCount - count($result->warnings)),
+                'errors' => max(0, $result->errorCount - count($result->errors)),
+                'backups' => max(0, $result->backupCount - count($result->backups)),
             ],
             'migrated' => $result->migrated,
             'skipped' => $result->skipped,
