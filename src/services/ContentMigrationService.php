@@ -36,89 +36,95 @@ class ContentMigrationService extends Component
                 continue;
             }
 
-            $query = $this->buildElementQuery($fieldAudit->containers);
-            foreach ($query->batch($batchSize) as $batch) {
-                foreach ($batch as $element) {
-                    try {
-                        if (HyperToLink::$plugin->getState()->isMigrated('content', $fieldAudit->handle, $element)) {
-                            $result->addSkipped([
-                                'field' => $fieldAudit->handle,
-                                'elementId' => $element->id,
-                                'reason' => 'Already migrated.',
-                            ]);
+            $layoutIds = $this->extractLayoutIds($fieldAudit->containers);
+            foreach ($this->buildElementQueries($fieldAudit->containers) as $query) {
+                foreach ($query->batch($batchSize) as $batch) {
+                    foreach ($batch as $element) {
+                        if (!$this->elementSupportsField($element, $fieldAudit->handle, $layoutIds)) {
                             continue;
                         }
 
-                        $value = $element->getFieldValue($fieldAudit->handle);
-                        if ($this->isEmptyHyperValue($value)) {
-                            if (empty($options['dryRun'])) {
-                                HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Empty value.');
+                        try {
+                            if (HyperToLink::$plugin->getState()->isMigrated('content', $fieldAudit->handle, $element)) {
+                                $result->addSkipped([
+                                    'field' => $fieldAudit->handle,
+                                    'elementId' => $element->id,
+                                    'reason' => 'Already migrated.',
+                                ]);
+                                continue;
                             }
-                            $result->addSkipped([
-                                'field' => $fieldAudit->handle,
-                                'elementId' => $element->id,
-                                'reason' => 'Empty value.',
-                            ]);
-                            continue;
-                        }
 
-                        $conversion = $this->convertHyperValue($value);
-                        if ($conversion['status'] === 'unsupported') {
-                            if (empty($options['dryRun'])) {
-                                HyperToLink::$plugin->getState()->markWarning('content', $fieldAudit->handle, $element, $conversion['warnings'], $conversion['backup']);
+                            $value = $element->getFieldValue($fieldAudit->handle);
+                            if ($this->isEmptyHyperValue($value)) {
+                                if (empty($options['dryRun'])) {
+                                    HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Empty value.');
+                                }
+                                $result->addSkipped([
+                                    'field' => $fieldAudit->handle,
+                                    'elementId' => $element->id,
+                                    'reason' => 'Empty value.',
+                                ]);
+                                continue;
                             }
-                            $result->addWarning([
-                                'field' => $fieldAudit->handle,
-                                'elementId' => $element->id,
-                                'warnings' => $conversion['warnings'],
-                            ]);
-                            continue;
-                        }
 
-                        $backupPath = null;
-                        if (empty($options['dryRun']) && !empty($options['createBackup'])) {
-                            $backupPath = HyperToLink::$plugin->getState()->writeBackup('content', $fieldAudit->handle, $element, $conversion['backup']);
-                            $result->addBackup($backupPath);
-                        }
+                            $conversion = $this->convertHyperValue($value);
+                            if ($conversion['status'] === 'unsupported') {
+                                if (empty($options['dryRun'])) {
+                                    HyperToLink::$plugin->getState()->markWarning('content', $fieldAudit->handle, $element, $conversion['warnings'], $conversion['backup']);
+                                }
+                                $result->addWarning([
+                                    'field' => $fieldAudit->handle,
+                                    'elementId' => $element->id,
+                                    'warnings' => $conversion['warnings'],
+                                ]);
+                                continue;
+                            }
 
-                        if (!empty($options['dryRun'])) {
+                            $backupPath = null;
+                            if (empty($options['dryRun']) && !empty($options['createBackup'])) {
+                                $backupPath = HyperToLink::$plugin->getState()->writeBackup('content', $fieldAudit->handle, $element, $conversion['backup']);
+                                $result->addBackup($backupPath);
+                            }
+
+                            if (!empty($options['dryRun'])) {
+                                $result->addMigrated([
+                                    'field' => $fieldAudit->handle,
+                                    'elementId' => $element->id,
+                                    'siteId' => $element->siteId,
+                                    'mode' => 'dry-run',
+                                    'payload' => $conversion['summary'],
+                                    'backupPath' => $backupPath,
+                                ]);
+                                continue;
+                            }
+
+                            $element->setFieldValue($fieldAudit->handle, $conversion['payload']);
+                            if (!$elements->saveElement($element, false, false, false)) {
+                                throw new \RuntimeException('saveElement() returned false.');
+                            }
+
+                            HyperToLink::$plugin->getState()->markMigrated(
+                                'content',
+                                $fieldAudit->handle,
+                                $element,
+                                $conversion['warnings'],
+                                $conversion['backup'],
+                                $backupPath
+                            );
                             $result->addMigrated([
                                 'field' => $fieldAudit->handle,
                                 'elementId' => $element->id,
                                 'siteId' => $element->siteId,
-                                'mode' => 'dry-run',
-                                'payload' => $conversion['summary'],
+                                'warnings' => $conversion['warnings'],
                                 'backupPath' => $backupPath,
                             ]);
-                            continue;
+                        } catch (\Throwable $e) {
+                            $result->recordError([
+                                'field' => $fieldAudit->handle,
+                                'elementId' => $element->id ?? null,
+                                'reason' => $e->getMessage(),
+                            ]);
                         }
-
-                        $element->setFieldValue($fieldAudit->handle, $conversion['payload']);
-                        if (!$elements->saveElement($element, false, false, false)) {
-                            throw new \RuntimeException('saveElement() returned false.');
-                        }
-
-                        HyperToLink::$plugin->getState()->markMigrated(
-                            'content',
-                            $fieldAudit->handle,
-                            $element,
-                            $conversion['warnings'],
-                            $conversion['backup'],
-                            $backupPath
-                        );
-                        $result->addMigrated([
-                            'field' => $fieldAudit->handle,
-                            'elementId' => $element->id,
-                            'siteId' => $element->siteId,
-                            'warnings' => $conversion['warnings'],
-                            'backupPath' => $backupPath,
-                        ]);
-                    } catch (\Throwable $e) {
-                        $result->recordError([
-                            'field' => $fieldAudit->handle,
-                            'elementId' => $element->id ?? null,
-                            'reason' => $e->getMessage(),
-                        ]);
                     }
                 }
             }
@@ -127,18 +133,63 @@ class ContentMigrationService extends Component
         return $result;
     }
 
-    private function buildElementQuery(array $containers): ElementQuery
+    /**
+     * @return ElementQuery[]
+     */
+    private function buildElementQueries(array $containers): array
     {
-        $class = \craft\elements\Entry::class;
+        $classes = [];
+
         foreach ($containers as $container) {
-            if (is_object($container) && isset($container->elementType)) {
-                $class = $container->elementType;
-                break;
+            if (
+                is_object($container) &&
+                isset($container->type) &&
+                is_string($container->type) &&
+                is_a($container->type, ElementInterface::class, true)
+            ) {
+                $classes[$container->type] = true;
             }
         }
 
-        /** @var ElementQuery */
-        return $class::find()->status(null)->site('*')->drafts(null)->provisionalDrafts(null)->trashed(null);
+        if (empty($classes)) {
+            $classes[\craft\elements\Entry::class] = true;
+        }
+
+        $queries = [];
+        foreach (array_keys($classes) as $class) {
+            /** @var ElementQuery $query */
+            $query = $class::find()->status(null)->site('*')->drafts(null)->provisionalDrafts(null)->trashed(null);
+            $queries[] = $query;
+        }
+
+        return $queries;
+    }
+
+    private function extractLayoutIds(array $containers): array
+    {
+        $layoutIds = [];
+
+        foreach ($containers as $container) {
+            if (is_object($container) && isset($container->id) && is_numeric($container->id)) {
+                $layoutIds[(int)$container->id] = true;
+            }
+        }
+
+        return array_keys($layoutIds);
+    }
+
+    private function elementSupportsField(ElementInterface $element, string $fieldHandle, array $layoutIds): bool
+    {
+        $fieldLayout = $element->getFieldLayout();
+        if ($fieldLayout === null) {
+            return false;
+        }
+
+        if ($layoutIds !== [] && !in_array((int)$fieldLayout->id, $layoutIds, true)) {
+            return false;
+        }
+
+        return $fieldLayout->getFieldByHandle($fieldHandle) !== null;
     }
 
     private function isEmptyHyperValue(mixed $value): bool
