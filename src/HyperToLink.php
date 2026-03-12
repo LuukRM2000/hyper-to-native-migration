@@ -14,7 +14,7 @@ use lm2k\hypertolink\services\StateService;
 
 class HyperToLink extends Plugin
 {
-    public const HANDLE = 'hyper-to-link';
+    public const HANDLE = 'link-migrator';
 
     public bool $hasCpSettings = false;
     public bool $hasCpSection = false;

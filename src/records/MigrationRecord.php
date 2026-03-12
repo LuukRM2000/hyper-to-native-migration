@@ -8,6 +8,6 @@ class MigrationRecord extends ActiveRecord
 {
     public static function tableName(): string
     {
-        return '{{%hypertolink_migrations}}';
+        return '{{%linkmigrator_migrations}}';
     }
 }

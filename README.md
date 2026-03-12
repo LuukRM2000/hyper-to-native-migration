@@ -1,6 +1,7 @@
-# Native Link Migrator
+# Link Migrator
 
-Native Link Migrator is a CLI-first Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field.
+Link Migrator is a CLI-first Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field.
+The current release targets Verbb Hyper migrations specifically, while leaving room for broader legacy link migration support in the future.
 
 It is built for teams that want a migration they can inspect, dry-run, report on, and resume. There is no control panel UI and no black-box "convert everything" button. The plugin splits the work into explicit stages and writes reports for every run.
 
@@ -32,27 +33,40 @@ This plugin is independent and unaffiliated. Verbb Hyper is a plugin by Verbb.
 
 ## Installation
 
+Once published, you will be able to install Link Migrator from Craft's in-app Plugin Store or via Composer.
+
 Install from Composer:
 
 ```bash
-composer require lm2k/craft-hyper-to-link
-php craft plugin/install hyper-to-link
+composer require lm2k/craft-link-migrator
+php craft plugin/install link-migrator
 ```
 
 If you use DDEV:
 
 ```bash
-ddev composer require lm2k/craft-hyper-to-link
-ddev craft plugin/install hyper-to-link
+ddev composer require lm2k/craft-link-migrator
+ddev craft plugin/install link-migrator
 ```
+
+## Licensing
+
+Link Migrator is intended for distribution as a commercial Craft Plugin Store plugin under the Craft License.
+
+Craft requires all commercial Plugin Store plugins to follow its licensing model:
+
+- free to trial on private development and staging environments
+- paid for use on a public production domain
+
+That means you can sell the plugin, but you cannot disable development and staging trials if you distribute it via the Craft Plugin Store.
 
 ## Recommended Workflow
 
 For most projects, use the orchestration command:
 
 ```bash
-php craft hyper-to-link/migrate/all --dry-run=1 --create-backup=1
-php craft hyper-to-link/migrate/all --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/all --dry-run=1 --create-backup=1
+php craft link-migrator/migrate/all --force=1 --create-backup=1 --batch-size=100
 ```
 
 `migrate/all` runs:
@@ -74,25 +88,25 @@ Notes:
 If you want to inspect every stage yourself, run:
 
 ```bash
-php craft hyper-to-link/migrate/audit --dry-run=1
-php craft hyper-to-link/migrate/fields --dry-run=1
-php craft hyper-to-link/migrate/fields --force=1
+php craft link-migrator/migrate/audit --dry-run=1
+php craft link-migrator/migrate/fields --dry-run=1
+php craft link-migrator/migrate/fields --force=1
 php craft project-config/apply
-php craft hyper-to-link/migrate/content --dry-run=1 --create-backup=1
-php craft hyper-to-link/migrate/content --force=1 --create-backup=1 --batch-size=100
-php craft hyper-to-link/migrate/rollback-info
+php craft link-migrator/migrate/content --dry-run=1 --create-backup=1
+php craft link-migrator/migrate/content --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/rollback-info
 ```
 
 A single-field run is also supported:
 
 ```bash
-php craft hyper-to-link/migrate/fields --field=ctaLink --dry-run=1
-php craft hyper-to-link/migrate/content --field=ctaLink --force=1 --create-backup=1
+php craft link-migrator/migrate/fields --field=ctaLink --dry-run=1
+php craft link-migrator/migrate/content --field=ctaLink --force=1 --create-backup=1
 ```
 
 ## Commands
 
-### `hyper-to-link/migrate/all`
+### `link-migrator/migrate/all`
 
 Runs audit, field migration, and content migration in sequence.
 
@@ -106,7 +120,7 @@ Common options:
 - `--apply-project-config=0`
 - `--verbose=1`
 
-### `hyper-to-link/migrate/audit`
+### `link-migrator/migrate/audit`
 
 Builds an audit of Hyper fields, supported mappings, unsupported cases, code references, and mismatch candidates.
 
@@ -116,7 +130,7 @@ Useful when:
 - you want to see unsupported link types before changing anything
 - you want a machine-readable report of the current state
 
-### `hyper-to-link/migrate/fields`
+### `link-migrator/migrate/fields`
 
 Migrates supported Hyper field definitions to Craft Link field definitions.
 
@@ -126,7 +140,7 @@ Important:
 - unsupported fields are skipped
 - this changes field configuration, not content
 
-### `hyper-to-link/migrate/content`
+### `link-migrator/migrate/content`
 
 Migrates existing content values into `craft\fields\data\LinkData`.
 
@@ -138,7 +152,7 @@ Important:
 - optional backups are written before content is changed
 - if you want to run `php craft project-config/apply`, do it as a separate command after the migration run
 
-### `hyper-to-link/migrate/mismatches`
+### `link-migrator/migrate/mismatches`
 
 Scans templates, modules, `src`, and config for common Hyper-only API usage that usually breaks after migration.
 
@@ -156,7 +170,7 @@ Examples it flags:
 
 This command exits non-zero if mismatches are found, which makes it useful in CI or migration checklists.
 
-### `hyper-to-link/migrate/rollback-info`
+### `link-migrator/migrate/rollback-info`
 
 Shows informational summaries from the plugin's migration state table:
 
@@ -221,7 +235,7 @@ Every run writes:
 Stored in:
 
 ```text
-storage/runtime/hyper-to-link/
+storage/runtime/link-migrator/
 ```
 
 ### Optional backups
@@ -229,7 +243,7 @@ storage/runtime/hyper-to-link/
 When `--create-backup=1` is used during content migration, per-element backup payloads are written to:
 
 ```text
-storage/runtime/hyper-to-link/backups/
+storage/runtime/link-migrator/backups/
 ```
 
 ### Migration state
@@ -237,7 +251,7 @@ storage/runtime/hyper-to-link/backups/
 The plugin stores per-element migration state in:
 
 ```text
-{{%hypertolink_migrations}}
+{{%linkmigrator_migrations}}
 ```
 
 This is what allows content migration to skip already migrated element/site pairs and resume safely after interruptions.
@@ -270,15 +284,15 @@ Read [docs/TEMPLATE-IMPACT.md](docs/TEMPLATE-IMPACT.md) before running the conte
 Dry run everything first:
 
 ```bash
-php craft hyper-to-link/migrate/mismatches
-php craft hyper-to-link/migrate/all --dry-run=1 --create-backup=1
+php craft link-migrator/migrate/mismatches
+php craft link-migrator/migrate/all --dry-run=1 --create-backup=1
 ```
 
 Then perform the real migration:
 
 ```bash
-php craft hyper-to-link/migrate/all --force=1 --create-backup=1 --batch-size=100
-php craft hyper-to-link/migrate/rollback-info
+php craft link-migrator/migrate/all --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/rollback-info
 ```
 
 ## Support

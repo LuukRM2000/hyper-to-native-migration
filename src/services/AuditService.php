@@ -184,7 +184,7 @@ class AuditService extends Component
      */
     private function recoverMigratedLinkFields(?string $fieldHandle, array $existingHandles): array
     {
-        $baseDir = Craft::getAlias('@storage/runtime/hyper-to-link');
+        $baseDir = Craft::getAlias('@storage/runtime/link-migrator');
         if (!$baseDir || !is_dir($baseDir)) {
             return [];
         }

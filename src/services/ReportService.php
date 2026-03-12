@@ -15,7 +15,7 @@ class ReportService extends Component
     public function beginRun(string $action, bool $dryRun, bool $verbose): MigrationReport
     {
         $runId = gmdate('Ymd-His') . '-' . bin2hex(random_bytes(4));
-        $baseDir = Craft::getAlias('@storage/runtime/hyper-to-link');
+        $baseDir = Craft::getAlias('@storage/runtime/link-migrator');
         if (!is_dir($baseDir)) {
             mkdir($baseDir, 0775, true);
         }

@@ -84,7 +84,7 @@ class StateService extends Component
 
     public function writeBackup(string $action, string $fieldHandle, ElementInterface $element, array $backup): string
     {
-        $baseDir = Craft::getAlias('@storage/runtime/hyper-to-link/backups');
+        $baseDir = Craft::getAlias('@storage/runtime/link-migrator/backups');
         if (!is_dir($baseDir)) {
             mkdir($baseDir, 0775, true);
         }

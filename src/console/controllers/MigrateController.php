@@ -73,7 +73,7 @@ class MigrateController extends Controller
 
     public function actionAll(): int
     {
-        $this->stdout("Running full Hyper to Link migration workflow.\n\n", Console::FG_YELLOW);
+        $this->stdout("Running full Link Migrator workflow.\n\n", Console::FG_YELLOW);
 
         [$audit, $auditExitCode] = $this->runAuditStage();
         if ($auditExitCode !== ExitCode::OK) {
@@ -109,7 +109,7 @@ class MigrateController extends Controller
             return $contentExitCode;
         }
 
-        $this->stdout("\nFull Hyper to Link workflow completed successfully.\n", Console::FG_GREEN);
+        $this->stdout("\nFull Link Migrator workflow completed successfully.\n", Console::FG_GREEN);
         return ExitCode::OK;
     }
 

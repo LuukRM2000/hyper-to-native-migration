@@ -8,7 +8,7 @@ class Install extends Migration
 {
     public function safeUp(): bool
     {
-        $this->createTable('{{%hypertolink_migrations}}', [
+        $this->createTable('{{%linkmigrator_migrations}}', [
             'id' => $this->primaryKey(),
             'action' => $this->string(32)->notNull(),
             'fieldHandle' => $this->string()->notNull(),
@@ -26,7 +26,7 @@ class Install extends Migration
 
         $this->createIndex(
             null,
-            '{{%hypertolink_migrations}}',
+            '{{%linkmigrator_migrations}}',
             ['action', 'fieldHandle', 'ownerId', 'siteId'],
             true
         );
@@ -36,7 +36,7 @@ class Install extends Migration
 
     public function safeDown(): bool
     {
-        $this->dropTableIfExists('{{%hypertolink_migrations}}');
+        $this->dropTableIfExists('{{%linkmigrator_migrations}}');
         return true;
     }
 }
