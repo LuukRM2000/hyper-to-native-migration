@@ -5,15 +5,10 @@ namespace lm2k\hypertolink\services;
 use Craft;
 use craft\base\Component;
 use craft\base\ElementInterface;
+use craft\elements\Asset;
+use craft\elements\Category;
+use craft\elements\Entry;
 use craft\elements\db\ElementQuery;
-use craft\fields\data\LinkData;
-use craft\fields\linktypes\Asset as AssetLinkType;
-use craft\fields\linktypes\Category as CategoryLinkType;
-use craft\fields\linktypes\Email as EmailLinkType;
-use craft\fields\linktypes\Entry as EntryLinkType;
-use craft\fields\linktypes\Phone as PhoneLinkType;
-use craft\fields\linktypes\Sms as SmsLinkType;
-use craft\fields\linktypes\Url as UrlLinkType;
 use lm2k\hypertolink\HyperToLink;
 use lm2k\hypertolink\models\AuditResult;
 use lm2k\hypertolink\models\ContentMigrationResult;
@@ -21,6 +16,8 @@ use lm2k\hypertolink\models\MappingDecision;
 
 class ContentMigrationService extends Component
 {
+    private const NATIVE_LINK_TYPES = ['asset', 'category', 'email', 'entry', 'phone', 'sms', 'url'];
+
     public function migrate(AuditResult $audit, array $options): ContentMigrationResult
     {
         $result = new ContentMigrationResult();
@@ -54,7 +51,19 @@ class ContentMigrationService extends Component
                                 continue;
                             }
 
-                            $value = $element->getFieldValue($fieldAudit->handle);
+                            $value = $this->getStoredFieldValue($element, $fieldAudit->handle);
+                            if ($this->isNativeLinkValue($value)) {
+                                if (empty($options['dryRun'])) {
+                                    HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Already a native Link value.');
+                                }
+                                $result->addSkipped([
+                                    'field' => $fieldAudit->handle,
+                                    'elementId' => $element->id,
+                                    'reason' => 'Already a native Link value.',
+                                ]);
+                                continue;
+                            }
+
                             if ($this->isEmptyHyperValue($value)) {
                                 if (empty($options['dryRun'])) {
                                     HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Empty value.');
@@ -67,7 +76,7 @@ class ContentMigrationService extends Component
                                 continue;
                             }
 
-                            $conversion = $this->convertHyperValue($value);
+                            $conversion = $this->convertHyperValue($value, $element->siteId);
                             if ($conversion['status'] === 'unsupported') {
                                 if (empty($options['dryRun'])) {
                                     HyperToLink::$plugin->getState()->markWarning('content', $fieldAudit->handle, $element, $conversion['warnings'], $conversion['backup']);
@@ -152,7 +161,7 @@ class ContentMigrationService extends Component
         }
 
         if (empty($classes)) {
-            $classes[\craft\elements\Entry::class] = true;
+            $classes[Entry::class] = true;
         }
 
         $queries = [];
@@ -192,9 +201,75 @@ class ContentMigrationService extends Component
         return $fieldLayout->getFieldByHandle($fieldHandle) !== null;
     }
 
+    private function getStoredFieldValue(ElementInterface $element, string $fieldHandle): mixed
+    {
+        $values = $element->getSerializedFieldValues([$fieldHandle]);
+        return $this->unwrapStoredFieldValue($values[$fieldHandle] ?? null);
+    }
+
+    private function unwrapStoredFieldValue(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            $decoded = $this->decodeSerializedJson($value);
+            if ($decoded !== null) {
+                return $this->unwrapStoredFieldValue($decoded);
+            }
+
+            return $value;
+        }
+
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        if ($this->looksLikeNativeLinkPayload($value)) {
+            $decoded = $this->decodeSerializedJson((string)$value['value']);
+            if ($decoded !== null) {
+                return $this->unwrapStoredFieldValue($decoded);
+            }
+
+            return $value;
+        }
+
+        if (array_is_list($value) && count($value) === 1) {
+            return $this->unwrapStoredFieldValue($value[0]);
+        }
+
+        return $value;
+    }
+
+    private function decodeSerializedJson(string $value): mixed
+    {
+        $value = trim($value);
+        if ($value === '' || (!str_starts_with($value, '[') && !str_starts_with($value, '{'))) {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+    }
+
+    private function looksLikeNativeLinkPayload(array $value): bool
+    {
+        return isset($value['type'], $value['value'])
+            && is_string($value['type'])
+            && in_array($value['type'], self::NATIVE_LINK_TYPES, true);
+    }
+
+    private function isNativeLinkValue(mixed $value): bool
+    {
+        return is_array($value)
+            && $this->looksLikeNativeLinkPayload($value)
+            && $this->decodeSerializedJson((string)$value['value']) === null;
+    }
+
     private function isEmptyHyperValue(mixed $value): bool
     {
         if ($value === null || $value === '' || $value === []) {
+            return true;
+        }
+
+        if (is_array($value) && isset($value['value']) && trim((string)$value['value']) === '') {
             return true;
         }
 
@@ -205,7 +280,7 @@ class ContentMigrationService extends Component
         return false;
     }
 
-    private function convertHyperValue(mixed $value): array
+    private function convertHyperValue(mixed $value, ?int $elementSiteId = null): array
     {
         $backup = $this->backupPayload($value);
         $warnings = [];
@@ -220,24 +295,25 @@ class ContentMigrationService extends Component
         $rel = $this->readHyperProperty($value, ['rel']);
         $customFields = $this->readHyperProperty($value, ['fields']);
         $linkValue = $this->readHyperProperty($value, ['linkValue', 'value', 'url']);
-        $element = $this->readElement($value);
+        $linkedSiteId = $this->readHyperProperty($value, ['linkSiteId', 'siteId']) ?? $elementSiteId;
+        $element = $this->readElement($value) ?? $this->resolveLinkedElement($type, $linkValue, $linkedSiteId);
 
         if ($customFields) {
             $warnings[] = 'Custom Hyper link fields were preserved in backup only.';
         }
 
-        $linkTypeClass = match ($type) {
-            'asset' => AssetLinkType::class,
-            'category' => CategoryLinkType::class,
-            'email' => EmailLinkType::class,
-            'entry' => EntryLinkType::class,
-            'phone' => PhoneLinkType::class,
-            'sms' => SmsLinkType::class,
-            'url' => UrlLinkType::class,
+        $nativeType = match ($type) {
+            'asset' => 'asset',
+            'category' => 'category',
+            'email' => 'email',
+            'entry' => 'entry',
+            'phone' => 'phone',
+            'sms' => 'sms',
+            'url' => 'url',
             default => null,
         };
 
-        if ($linkTypeClass === null) {
+        if ($nativeType === null) {
             if (!$linkValue || !is_scalar($linkValue)) {
                 return [
                     'status' => 'unsupported',
@@ -246,7 +322,7 @@ class ContentMigrationService extends Component
                 ];
             }
 
-            $linkTypeClass = UrlLinkType::class;
+            $nativeType = 'url';
             $warnings[] = sprintf(
                 'Custom or unsupported Hyper link type "%s" was migrated as a native URL link.',
                 $type ?: 'unknown'
@@ -265,7 +341,9 @@ class ContentMigrationService extends Component
             $linkValue = $element->id;
         }
 
-        $payloadConfig = array_filter([
+        $payload = array_filter([
+            'type' => $nativeType,
+            'value' => $linkValue,
             'label' => $text,
             'target' => $target ? '_blank' : null,
             'urlSuffix' => $urlSuffix,
@@ -273,16 +351,13 @@ class ContentMigrationService extends Component
             'class' => $class,
             'id' => $id,
             'rel' => $rel,
-            'element' => $element,
         ], static fn($item) => $item !== null && $item !== '');
-
-        $payload = new LinkData($linkValue, $linkTypeClass, $payloadConfig);
 
         return [
             'status' => 'ok',
             'payload' => $payload,
             'summary' => [
-                'type' => $type,
+                'type' => $nativeType,
                 'value' => $linkValue,
                 'label' => $text,
                 'target' => $target ? '_blank' : null,
@@ -333,6 +408,46 @@ class ContentMigrationService extends Component
         }
 
         return null;
+    }
+
+    private function resolveLinkedElement(string $type, mixed $value, mixed $siteId): ?ElementInterface
+    {
+        $elementId = match (true) {
+            is_numeric($value) => (int)$value,
+            is_array($value) && count($value) === 1 && is_numeric(reset($value)) => (int)reset($value),
+            default => null,
+        };
+
+        if (!$elementId) {
+            return null;
+        }
+
+        $elementClass = match ($type) {
+            'asset' => Asset::class,
+            'category' => Category::class,
+            'entry' => Entry::class,
+            default => null,
+        };
+
+        if ($elementClass === null) {
+            return null;
+        }
+
+        /** @var ElementQuery $query */
+        $query = $elementClass::find()->id($elementId)->status(null);
+
+        if (method_exists($query, 'siteId') && is_numeric($siteId)) {
+            $query->siteId((int)$siteId);
+        }
+
+        foreach (['drafts', 'provisionalDrafts', 'trashed', 'revisions'] as $method) {
+            if (method_exists($query, $method)) {
+                $query->{$method}(null);
+            }
+        }
+
+        $element = $query->one();
+        return $element instanceof ElementInterface ? $element : null;
     }
 
     private function backupPayload(mixed $value): array

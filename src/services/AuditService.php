@@ -4,9 +4,11 @@ namespace lm2k\hypertolink\services;
 
 use Craft;
 use craft\base\Component;
+use craft\fields\Link;
 use lm2k\hypertolink\HyperToLink;
 use lm2k\hypertolink\models\AuditResult;
 use lm2k\hypertolink\models\FieldAudit;
+use lm2k\hypertolink\models\MappingDecision;
 
 class AuditService extends Component
 {
@@ -67,6 +69,7 @@ class AuditService extends Component
     {
         $result = new AuditResult();
         $allFields = Craft::$app->getFields()->getAllFields(false);
+        $fieldsByHandle = [];
 
         foreach ($allFields as $field) {
             if ($fieldHandle && $field->handle !== $fieldHandle) {
@@ -99,8 +102,14 @@ class AuditService extends Component
                 ->decide($settings, $linkTypes, $multi, $fieldLayouts);
             $audit->warnings = $audit->mapping->warnings;
 
-            $result->fields[] = $audit;
+            $fieldsByHandle[$audit->handle] = $audit;
         }
+
+        foreach ($this->recoverMigratedLinkFields($fieldHandle, array_keys($fieldsByHandle)) as $audit) {
+            $fieldsByHandle[$audit->handle] = $audit;
+        }
+
+        $result->fields = array_values($fieldsByHandle);
 
         $result->codeReferences = $this->findCodeReferences();
         $result->mismatchReferences = $this->findMismatchReferences();
@@ -168,6 +177,86 @@ class AuditService extends Component
         }
 
         return $containers;
+    }
+
+    /**
+     * @return FieldAudit[]
+     */
+    private function recoverMigratedLinkFields(?string $fieldHandle, array $existingHandles): array
+    {
+        $baseDir = Craft::getAlias('@storage/runtime/hyper-to-link');
+        if (!$baseDir || !is_dir($baseDir)) {
+            return [];
+        }
+
+        $reports = glob($baseDir . DIRECTORY_SEPARATOR . '*-fields.json') ?: [];
+        rsort($reports, SORT_STRING);
+
+        foreach ($reports as $reportPath) {
+            $payload = json_decode((string)file_get_contents($reportPath), true);
+            if (!is_array($payload)) {
+                continue;
+            }
+
+            $recovered = [];
+            foreach (($payload['migrated'] ?? []) as $item) {
+                $handle = $item['field'] ?? null;
+                if (!is_string($handle) || $handle === '') {
+                    continue;
+                }
+
+                if ($fieldHandle && $handle !== $fieldHandle) {
+                    continue;
+                }
+
+                if (in_array($handle, $existingHandles, true)) {
+                    continue;
+                }
+
+                $field = $this->findFieldByHandle($handle);
+                if (!$field || !$field instanceof Link) {
+                    continue;
+                }
+
+                $mapping = new MappingDecision([
+                    'status' => (string)($item['status'] ?? MappingDecision::STATUS_PARTIAL),
+                    'craftLinkTypes' => $field->types,
+                    'advancedFields' => $field->advancedFields,
+                ]);
+
+                $audit = new FieldAudit([
+                    'fieldId' => (int)$field->id,
+                    'uid' => (string)$field->uid,
+                    'handle' => (string)$field->handle,
+                    'name' => (string)$field->name,
+                    'multi' => false,
+                    'allowedHyperTypes' => $field->types,
+                    'containers' => $this->discoverContainers($field),
+                    'rawSettings' => method_exists($field, 'getSettings') ? $field->getSettings() : [],
+                ]);
+                $audit->mapping = $mapping;
+                $audit->warnings = $mapping->warnings;
+
+                $recovered[] = $audit;
+            }
+
+            if ($recovered !== []) {
+                return $recovered;
+            }
+        }
+
+        return [];
+    }
+
+    private function findFieldByHandle(string $handle): ?object
+    {
+        foreach (Craft::$app->getFields()->getAllFields(false) as $field) {
+            if ((string)$field->handle === $handle) {
+                return $field;
+            }
+        }
+
+        return null;
     }
 
     private function findCodeReferences(): array
