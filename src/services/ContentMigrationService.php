@@ -19,6 +19,9 @@ use lm2k\hypertolink\models\MappingDecision;
 class ContentMigrationService extends Component
 {
     private const NATIVE_LINK_TYPES = ['asset', 'category', 'email', 'entry', 'phone', 'sms', 'url'];
+    private array $fieldContextCache = [];
+    private array $rawContentCache = [];
+    private array $migratedStateCache = [];
 
     public function migrate(AuditResult $audit, array $options): ContentMigrationResult
     {
@@ -38,6 +41,8 @@ class ContentMigrationService extends Component
             $layoutIds = $this->extractLayoutIds($fieldAudit->containers);
             foreach ($this->buildElementQueries($fieldAudit->containers) as $query) {
                 foreach ($query->batch($batchSize) as $batch) {
+                    $this->primeBatchCaches($fieldAudit, $batch);
+
                     foreach ($batch as $element) {
                         $fieldContext = $this->resolveFieldContext($element, $fieldAudit->fieldId);
                         $runtimeFieldHandle = $fieldContext['runtimeHandle'] ?? null;
@@ -46,50 +51,25 @@ class ContentMigrationService extends Component
                         }
 
                         try {
-                            if (HyperToLink::$plugin->getState()->isMigrated('content', $fieldAudit->handle, $element)) {
-                                $result->addSkipped([
-                                    'field' => $fieldAudit->handle,
-                                    'elementId' => $element->id,
-                                    'reason' => 'Already migrated.',
-                                ]);
+                            if ($this->isMigratedInBatch($element)) {
+                                $this->recordSkipped($result, $options, $fieldAudit->handle, $element, 'Already migrated.');
                                 continue;
                             }
 
                             $value = $this->getStoredFieldValue($element, $fieldAudit, $fieldContext);
                             if ($this->isNativeLinkValue($value)) {
-                                if (empty($options['dryRun'])) {
-                                    HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Already a native Link value.');
-                                }
-                                $result->addSkipped([
-                                    'field' => $fieldAudit->handle,
-                                    'elementId' => $element->id,
-                                    'reason' => 'Already a native Link value.',
-                                ]);
+                                $this->recordSkipped($result, $options, $fieldAudit->handle, $element, 'Already a native Link value.');
                                 continue;
                             }
 
                             if ($this->isEmptyHyperValue($value)) {
-                                if (empty($options['dryRun'])) {
-                                    HyperToLink::$plugin->getState()->markSkipped('content', $fieldAudit->handle, $element, 'Empty value.');
-                                }
-                                $result->addSkipped([
-                                    'field' => $fieldAudit->handle,
-                                    'elementId' => $element->id,
-                                    'reason' => 'Empty value.',
-                                ]);
+                                $this->recordSkipped($result, $options, $fieldAudit->handle, $element, 'Empty value.');
                                 continue;
                             }
 
                             $conversion = $this->convertHyperValue($value, $element->siteId);
                             if ($conversion['status'] === 'unsupported') {
-                                if (empty($options['dryRun'])) {
-                                    HyperToLink::$plugin->getState()->markWarning('content', $fieldAudit->handle, $element, $conversion['warnings'], $conversion['backup']);
-                                }
-                                $result->addWarning([
-                                    'field' => $fieldAudit->handle,
-                                    'elementId' => $element->id,
-                                    'warnings' => $conversion['warnings'],
-                                ]);
+                                $this->recordWarning($result, $options, $fieldAudit->handle, $element, $conversion['warnings'], $conversion['backup']);
                                 continue;
                             }
 
@@ -191,6 +171,70 @@ class ContentMigrationService extends Component
         return array_keys($layoutIds);
     }
 
+    private function primeBatchCaches(FieldAudit $fieldAudit, array $batch): void
+    {
+        $this->rawContentCache = [];
+        $this->migratedStateCache = HyperToLink::$plugin->getState()->migratedMap('content', $fieldAudit->handle, $batch);
+
+        $condition = $this->buildElementSiteCondition($batch);
+        if ($condition === null) {
+            return;
+        }
+
+        $rows = (new Query())
+            ->select(['elementId', 'siteId', 'content'])
+            ->from(['{{%elements_sites}}'])
+            ->where($condition)
+            ->all();
+
+        foreach ($rows as $row) {
+            $cacheKey = $row['elementId'] . ':' . $row['siteId'];
+            $content = $row['content'] ?? null;
+
+            if (!is_string($content) || $content === '') {
+                $this->rawContentCache[$cacheKey] = null;
+                continue;
+            }
+
+            $decoded = json_decode($content, true);
+            $this->rawContentCache[$cacheKey] = is_array($decoded) ? $decoded : null;
+        }
+
+        foreach ($batch as $element) {
+            if ($element instanceof ElementInterface) {
+                $this->rawContentCache[$this->elementKey($element)] ??= null;
+            }
+        }
+    }
+
+    private function buildElementSiteCondition(array $elements): ?array
+    {
+        $pairs = [];
+
+        foreach ($elements as $element) {
+            if (!$element instanceof ElementInterface || $element->id === null || $element->siteId === null) {
+                continue;
+            }
+
+            $pairs[$this->elementKey($element)] = [
+                'and',
+                ['elementId' => (int)$element->id],
+                ['siteId' => (int)$element->siteId],
+            ];
+        }
+
+        if ($pairs === []) {
+            return null;
+        }
+
+        return ['or', ...array_values($pairs)];
+    }
+
+    private function isMigratedInBatch(ElementInterface $element): bool
+    {
+        return $this->migratedStateCache[$this->elementKey($element)] ?? false;
+    }
+
     private function elementSupportsField(ElementInterface $element, string $fieldHandle, array $layoutIds): bool
     {
         $fieldLayout = $element->getFieldLayout();
@@ -212,6 +256,11 @@ class ContentMigrationService extends Component
             return null;
         }
 
+        $cacheKey = (int)$fieldLayout->id . ':' . $fieldId;
+        if (array_key_exists($cacheKey, $this->fieldContextCache)) {
+            return $this->fieldContextCache[$cacheKey];
+        }
+
         foreach ($fieldLayout->getTabs() as $tab) {
             foreach ($tab->getElements() as $layoutElement) {
                 if (!method_exists($layoutElement, 'getField')) {
@@ -220,7 +269,7 @@ class ContentMigrationService extends Component
 
                 $field = $layoutElement->getField();
                 if ($field && (int)$field->id === $fieldId) {
-                    return [
+                    return $this->fieldContextCache[$cacheKey] = [
                         'runtimeHandle' => (string)$field->handle,
                         'layoutElementUid' => isset($layoutElement->uid) ? (string)$layoutElement->uid : null,
                     ];
@@ -230,14 +279,14 @@ class ContentMigrationService extends Component
 
         foreach ($fieldLayout->getCustomFields() as $field) {
             if ((int)$field->id === $fieldId) {
-                return [
+                return $this->fieldContextCache[$cacheKey] = [
                     'runtimeHandle' => (string)$field->handle,
                     'layoutElementUid' => null,
                 ];
             }
         }
 
-        return null;
+        return $this->fieldContextCache[$cacheKey] = null;
     }
 
     private function getStoredFieldValue(ElementInterface $element, FieldAudit $fieldAudit, array $fieldContext): mixed
@@ -264,20 +313,26 @@ class ContentMigrationService extends Component
 
     private function getRawFieldValue(ElementInterface $element, array $rawKeys): mixed
     {
-        $content = (new Query())
-            ->select(['content'])
-            ->from(['{{%elements_sites}}'])
-            ->where([
-                'elementId' => $element->id,
-                'siteId' => $element->siteId,
-            ])
-            ->scalar();
+        $cacheKey = $this->elementKey($element);
+        if (!array_key_exists($cacheKey, $this->rawContentCache)) {
+            $content = (new Query())
+                ->select(['content'])
+                ->from(['{{%elements_sites}}'])
+                ->where([
+                    'elementId' => $element->id,
+                    'siteId' => $element->siteId,
+                ])
+                ->scalar();
 
-        if (!is_string($content) || $content === '') {
-            return null;
+            if (!is_string($content) || $content === '') {
+                $this->rawContentCache[$cacheKey] = null;
+            } else {
+                $decoded = json_decode($content, true);
+                $this->rawContentCache[$cacheKey] = is_array($decoded) ? $decoded : null;
+            }
         }
 
-        $decoded = json_decode($content, true);
+        $decoded = $this->rawContentCache[$cacheKey];
         if (!is_array($decoded)) {
             return null;
         }
@@ -289,6 +344,48 @@ class ContentMigrationService extends Component
         }
 
         return null;
+    }
+
+    private function recordSkipped(
+        ContentMigrationResult $result,
+        array $options,
+        string $fieldHandle,
+        ElementInterface $element,
+        string $reason
+    ): void {
+        if (empty($options['dryRun'])) {
+            HyperToLink::$plugin->getState()->markSkipped('content', $fieldHandle, $element, $reason);
+        }
+
+        $result->addSkipped([
+            'field' => $fieldHandle,
+            'elementId' => $element->id,
+            'reason' => $reason,
+        ]);
+    }
+
+    private function recordWarning(
+        ContentMigrationResult $result,
+        array $options,
+        string $fieldHandle,
+        ElementInterface $element,
+        array $warnings,
+        array $backup
+    ): void {
+        if (empty($options['dryRun'])) {
+            HyperToLink::$plugin->getState()->markWarning('content', $fieldHandle, $element, $warnings, $backup);
+        }
+
+        $result->addWarning([
+            'field' => $fieldHandle,
+            'elementId' => $element->id,
+            'warnings' => $warnings,
+        ]);
+    }
+
+    private function elementKey(ElementInterface $element): string
+    {
+        return $element->id . ':' . $element->siteId;
     }
 
     private function unwrapStoredFieldValue(mixed $value): mixed

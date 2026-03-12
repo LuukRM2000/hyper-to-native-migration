@@ -22,6 +22,44 @@ class StateService extends Component
             ->exists();
     }
 
+    public function migratedMap(string $action, string $fieldHandle, array $elements): array
+    {
+        $ownerIds = [];
+        $siteIds = [];
+
+        foreach ($elements as $element) {
+            if (!$element instanceof ElementInterface || $element->id === null || $element->siteId === null) {
+                continue;
+            }
+
+            $ownerIds[(int)$element->id] = true;
+            $siteIds[(int)$element->siteId] = true;
+        }
+
+        if ($ownerIds === [] || $siteIds === []) {
+            return [];
+        }
+
+        $records = MigrationRecord::find()
+            ->select(['ownerId', 'siteId'])
+            ->where([
+                'action' => $action,
+                'fieldHandle' => $fieldHandle,
+                'status' => 'migrated',
+                'ownerId' => array_keys($ownerIds),
+                'siteId' => array_keys($siteIds),
+            ])
+            ->asArray()
+            ->all();
+
+        $map = [];
+        foreach ($records as $record) {
+            $map[$record['ownerId'] . ':' . $record['siteId']] = true;
+        }
+
+        return $map;
+    }
+
     public function markMigrated(
         string $action,
         string $fieldHandle,
