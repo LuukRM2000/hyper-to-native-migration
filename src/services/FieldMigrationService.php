@@ -83,7 +83,7 @@ class FieldMigrationService extends Component
             'name' => $existingField->name,
             'handle' => $existingField->handle,
             'types' => $mapping->craftLinkTypes,
-            'showLabelField' => in_array('label', $mapping->advancedFields, true),
+            'showLabelField' => true,
         ];
 
         foreach (['instructions', 'translationMethod', 'translationKeyFormat', 'searchable', 'required', 'tip', 'warning', 'uid'] as $property) {

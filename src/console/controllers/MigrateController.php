@@ -2,7 +2,6 @@
 
 namespace lm2k\hypertolink\console\controllers;
 
-use Craft;
 use craft\console\Controller;
 use craft\helpers\Console;
 use lm2k\hypertolink\HyperToLink;
@@ -95,10 +94,12 @@ class MigrateController extends Controller
         if ($this->dryRun) {
             $this->stdout("Skipping project config apply during dry run.\n", Console::FG_YELLOW);
         } elseif ($this->applyProjectConfig) {
-            $projectConfigExitCode = $this->applyProjectConfigChanges();
-            if ($projectConfigExitCode !== ExitCode::OK) {
-                return $projectConfigExitCode;
-            }
+            $this->stdout(
+                "Project config files were updated during field migration.\n" .
+                "Skipping inline project-config/apply because Craft already holds the config lock in this process.\n" .
+                "Run `php craft project-config/apply` separately after this command if your environment requires it.\n",
+                Console::FG_YELLOW
+            );
         } else {
             $this->stdout("Skipping project config apply because --apply-project-config=0 was provided.\n", Console::FG_YELLOW);
         }
@@ -219,30 +220,5 @@ class MigrateController extends Controller
         $this->stdout("Content migration report written to {$report->reportPath}\n", Console::FG_GREEN);
 
         return [$result, $result->hasErrors() ? ExitCode::UNSPECIFIED_ERROR : ExitCode::OK];
-    }
-
-    private function applyProjectConfigChanges(): int
-    {
-        $craft = Craft::getAlias('@root/craft');
-        if (!is_file($craft)) {
-            $this->stderr("Could not find the Craft CLI executable at @root/craft.\n", Console::FG_RED);
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        $command = sprintf(
-            '%s %s project-config/apply',
-            escapeshellarg(PHP_BINARY),
-            escapeshellarg($craft)
-        );
-
-        $this->stdout("Applying project config changes...\n", Console::FG_YELLOW);
-        passthru($command, $status);
-
-        if ($status !== ExitCode::OK) {
-            $this->stderr("Project config apply failed.\n", Console::FG_RED);
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        return ExitCode::OK;
     }
 }

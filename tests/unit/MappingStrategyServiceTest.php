@@ -18,6 +18,16 @@ class MappingStrategyServiceTest extends Unit
         self::assertContains('label', $decision->advancedFields);
     }
 
+    public function testCustomTypeFallsBackToUrl(): void
+    {
+        $service = new MappingStrategyService();
+        $decision = $service->decide([], ['customType'], false, []);
+
+        self::assertSame(MappingDecision::STATUS_PARTIAL, $decision->status);
+        self::assertSame(['url'], $decision->craftLinkTypes);
+        self::assertNotEmpty($decision->warnings);
+    }
+
     public function testMultiLinkIsUnsupported(): void
     {
         $service = new MappingStrategyService();

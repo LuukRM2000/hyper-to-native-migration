@@ -187,11 +187,19 @@ class ContentMigrationService extends Component
         };
 
         if ($linkTypeClass === null) {
-            return [
-                'status' => 'unsupported',
-                'warnings' => [sprintf('Unsupported Hyper link type for content migration: %s', $type ?: 'unknown')],
-                'backup' => $backup,
-            ];
+            if (!$linkValue || !is_scalar($linkValue)) {
+                return [
+                    'status' => 'unsupported',
+                    'warnings' => [sprintf('Unsupported Hyper link type for content migration: %s', $type ?: 'unknown')],
+                    'backup' => $backup,
+                ];
+            }
+
+            $linkTypeClass = UrlLinkType::class;
+            $warnings[] = sprintf(
+                'Custom or unsupported Hyper link type "%s" was migrated as a native URL link.',
+                $type ?: 'unknown'
+            );
         }
 
         if (in_array($type, ['entry', 'asset', 'category'], true)) {

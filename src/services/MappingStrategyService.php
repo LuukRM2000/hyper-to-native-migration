@@ -35,7 +35,12 @@ class MappingStrategyService extends Component
                 continue;
             }
 
-            $decision->unsupportedReasons[] = sprintf('Unsupported Hyper link type: %s', $type);
+            $decision->craftLinkTypes[] = 'url';
+            $decision->warnings[] = sprintf(
+                'Custom or unsupported Hyper link type "%s" will be migrated as a native URL link.',
+                $type
+            );
+            $decision->lossyAttributes[] = 'customTypeFallback';
         }
 
         $decision->craftLinkTypes = array_values(array_unique($decision->craftLinkTypes));
@@ -59,9 +64,7 @@ class MappingStrategyService extends Component
             'rel',
         ];
 
-        if (!empty($settings['showText'])) {
-            $decision->advancedFields[] = 'label';
-        }
+        $decision->advancedFields[] = 'label';
 
         $decision->advancedFields = array_merge($decision->advancedFields, $advancedFields);
 

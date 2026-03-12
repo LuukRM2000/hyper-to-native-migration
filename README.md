@@ -59,14 +59,14 @@ php craft hyper-to-link/migrate/all --force=1 --create-backup=1 --batch-size=100
 
 1. `audit`
 2. `fields`
-3. `project-config/apply`
-4. `content`
+3. `content`
 
 Notes:
 
-- In dry-run mode, `project-config/apply` is skipped automatically.
+- In dry-run mode, no changes are written.
 - In write mode, the command refuses to run unless `--force=1` is provided.
-- You can skip project config apply explicitly with `--apply-project-config=0`.
+- Field migration still writes project config files that you can review and apply separately if your workflow requires it.
+- `--apply-project-config=0` only suppresses the reminder message; `migrate/all` no longer tries to run `project-config/apply` inline because that conflicts with Craft's config lock during the same process.
 - `--batch-size=100` means the content migration processes 100 elements at a time.
 
 ## Manual Workflow
@@ -94,7 +94,7 @@ php craft hyper-to-link/migrate/content --field=ctaLink --force=1 --create-backu
 
 ### `hyper-to-link/migrate/all`
 
-Runs audit, field migration, project config apply, and content migration in sequence.
+Runs audit, field migration, and content migration in sequence.
 
 Common options:
 
@@ -136,6 +136,7 @@ Important:
 - content writes are resumable
 - already migrated element/site pairs are skipped on later runs
 - optional backups are written before content is changed
+- if you want to run `php craft project-config/apply`, do it as a separate command after the migration run
 
 ### `hyper-to-link/migrate/mismatches`
 
@@ -189,16 +190,20 @@ Migrated advanced attributes:
 - id
 - rel
 
+Field configuration defaults:
+
+- the native Link field label field is enabled by default
+
 Partially supported or lossy cases:
 
 - custom field layouts on Hyper link types are not migrated
 - Hyper fields with broad link-type allowances should be checked after migration
 - custom link field data is preserved in backups, not converted into native Link data
+- custom or unsupported Hyper link types are downgraded to native URL links when a scalar URL-like value is available
 
 Unsupported cases:
 
 - Hyper fields allowing multiple links
-- custom Hyper link types from plugins or custom code
 - embed-only data
 - user/site/plugin-specific link types without a native Link equivalent
 
