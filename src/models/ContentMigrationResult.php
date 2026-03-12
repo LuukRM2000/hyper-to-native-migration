@@ -37,7 +37,7 @@ class ContentMigrationResult extends Model
         $this->pushSample($this->warnings, $item);
     }
 
-    public function addError(array $item): void
+    public function recordError(array $item): void
     {
         $this->errorCount++;
         $this->pushSample($this->errors, $item);

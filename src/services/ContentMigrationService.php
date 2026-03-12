@@ -114,7 +114,7 @@ class ContentMigrationService extends Component
                             'backupPath' => $backupPath,
                         ]);
                     } catch (\Throwable $e) {
-                        $result->addError([
+                        $result->recordError([
                             'field' => $fieldAudit->handle,
                             'elementId' => $element->id ?? null,
                             'reason' => $e->getMessage(),
