@@ -1,9 +1,6 @@
 # Link Migrator
 
 Link Migrator is a CLI-first Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field.
-The current release targets Verbb Hyper migrations specifically, while leaving room for broader legacy link migration support in the future.
-
-It is built for teams that want a migration they can inspect, dry-run, report on, and resume. There is no control panel UI and no black-box "convert everything" button. The plugin splits the work into explicit stages and writes reports for every run.
 
 This plugin is independent and unaffiliated. Verbb Hyper is a plugin by Verbb.
 
