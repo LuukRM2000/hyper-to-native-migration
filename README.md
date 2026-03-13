@@ -14,13 +14,6 @@ This plugin is independent and unaffiliated. Verbb Hyper is a plugin by Verbb.
 - Tracks migration state so content migration can resume safely
 - Scans your templates and modules for common Hyper-to-Link API mismatches
 
-## What This Plugin Does Not Do
-
-- It does not provide a CP UI
-- It does not uninstall Hyper for you
-- It does not migrate unsupported Hyper link types into some guessed equivalent
-- It does not preserve Hyper-only APIs like embed helpers, custom per-link fields, or multi-link field behavior
-
 ## Requirements
 
 - PHP 8.2+
