@@ -32,17 +32,6 @@ composer require lm2k/craft-link-migrator
 php craft plugin/install link-migrator
 ```
 
-## Licensing
-
-Link Migrator is intended for distribution as a commercial Craft Plugin Store plugin under the Craft License.
-
-Craft requires all commercial Plugin Store plugins to follow its licensing model:
-
-- free to trial on private development and staging environments
-- paid for use on a public production domain
-
-That means you can sell the plugin, but you cannot disable development and staging trials if you distribute it via the Craft Plugin Store.
-
 ## Recommended Workflow
 
 For most projects, use the orchestration command:
@@ -277,6 +266,17 @@ Then perform the real migration:
 php craft link-migrator/migrate/all --force=1 --create-backup=1 --batch-size=100
 php craft link-migrator/migrate/rollback-info
 ```
+
+## Licensing
+
+Link Migrator is intended for distribution as a commercial Craft Plugin Store plugin under the Craft License.
+
+Craft requires all commercial Plugin Store plugins to follow its licensing model:
+
+- free to trial on private development and staging environments
+- paid for use on a public production domain
+
+That means you can sell the plugin, but you cannot disable development and staging trials if you distribute it via the Craft Plugin Store.
 
 ## Support
 
