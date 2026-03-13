@@ -32,13 +32,6 @@ composer require lm2k/craft-link-migrator
 php craft plugin/install link-migrator
 ```
 
-If you use DDEV:
-
-```bash
-ddev composer require lm2k/craft-link-migrator
-ddev craft plugin/install link-migrator
-```
-
 ## Licensing
 
 Link Migrator is intended for distribution as a commercial Craft Plugin Store plugin under the Craft License.
