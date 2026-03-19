@@ -7,6 +7,7 @@ use craft\base\Component;
 use craft\console\Controller;
 use lm2k\hypertolink\models\AuditResult;
 use lm2k\hypertolink\models\ContentMigrationResult;
+use lm2k\hypertolink\models\CutoverResult;
 use lm2k\hypertolink\models\FieldMigrationResult;
 use lm2k\hypertolink\models\MigrationReport;
 
@@ -76,8 +77,9 @@ class ReportService extends Component
         $controller->stdout($this->renderSummary($summary));
         $controller->stdout("Warnings:\n");
         $controller->stdout("- Back up the database and project config before non-dry runs.\n");
-        $controller->stdout("- Content writes are irreversible without manual restoration from backups.\n");
-        $controller->stdout("- Hyper will remain installed; do not uninstall it until reports are clean.\n\n");
+        $controller->stdout("- Hyper remains installed through the staged workflow; do not uninstall it until finalize is complete.\n");
+        $controller->stdout("- Prepare creates new native fields instead of overwriting existing Hyper fields.\n");
+        $controller->stdout("- Finalize only updates field layouts; v1 does not delete Hyper fields automatically.\n\n");
     }
 
     public function writeFieldResult(MigrationReport $report, FieldMigrationResult $result, Controller $controller): void
@@ -93,6 +95,7 @@ class ReportService extends Component
             'skipped' => $result->skipped,
             'warnings' => $result->warnings,
             'errors' => $result->errors,
+            'mappings' => $result->mappings,
         ];
 
         $this->persist($report, $payload);
@@ -122,6 +125,23 @@ class ReportService extends Component
             'warnings' => $result->warnings,
             'errors' => $result->errors,
             'backups' => $result->backups,
+        ];
+
+        $this->persist($report, $payload);
+        $controller->stdout($this->renderSummary($payload['summary']));
+    }
+
+    public function writeCutoverResult(MigrationReport $report, CutoverResult $result, Controller $controller): void
+    {
+        $payload = [
+            'summary' => [
+                'finalized' => count($result->finalized),
+                'skipped' => count($result->skipped),
+                'errors' => count($result->errors),
+            ],
+            'finalized' => $result->finalized,
+            'skipped' => $result->skipped,
+            'errors' => $result->errors,
         ];
 
         $this->persist($report, $payload);

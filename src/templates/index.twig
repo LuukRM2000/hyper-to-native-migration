@@ -1,0 +1,88 @@
+{% extends "_layouts/cp" %}
+
+{% set title = "Link Migrator" %}
+{% set pluginCpUrl = url('link-migrator') %}
+
+{% block content %}
+  <div class="readable">
+    <h1>Hyper to Link staged migration</h1>
+    <p>
+      Edition: <strong>{{ edition|upper }}</strong>
+      {% if licenseIssues %}
+        <span class="error">{{ licenseIssues|join(', ') }}</span>
+      {% endif %}
+    </p>
+
+    <p>
+      This wizard keeps Hyper fields intact, prepares parallel native Link fields, migrates content in batches, and only cuts field layouts over during the final step.
+    </p>
+
+    {% if writeBlockReason %}
+      <div class="warning">
+        <p>{{ writeBlockReason }}</p>
+      </div>
+    {% endif %}
+
+    <div class="buttons" style="margin-bottom: 24px;">
+      <a class="btn" href="{{ pluginCpUrl }}">Refresh audit</a>
+      <form method="post" action="{{ actionUrl('link-migrator/wizard/prepare-fields') }}" style="display:inline-block;">
+        {{ csrfInput() }}
+        <button class="btn submit" {% if not canWrite %}disabled{% endif %}>Step 2: Prepare Native Fields</button>
+      </form>
+      <form method="post" action="{{ actionUrl('link-migrator/wizard/migrate-content') }}" style="display:inline-block;">
+        {{ csrfInput() }}
+        <button class="btn submit" {% if not canWrite %}disabled{% endif %}>Step 3: Migrate Content</button>
+      </form>
+      <form method="post" action="{{ actionUrl('link-migrator/wizard/finalize') }}" style="display:inline-block;">
+        {{ csrfInput() }}
+        <button class="btn submit" {% if not canWrite %}disabled{% endif %}>Step 5: Finalize</button>
+      </form>
+    </div>
+
+    <h2>Workflow status</h2>
+    <table class="data fullwidth">
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Native target</th>
+          <th>Phase</th>
+          <th>Mapping</th>
+          <th>Content</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for status in statuses %}
+          {% set content = status.contentSummary ?? {} %}
+          <tr>
+            <td>{{ status.sourceHandle }}</td>
+            <td>{{ status.targetHandle ?? 'Not prepared' }}</td>
+            <td>{{ status.phase }}</td>
+            <td>{{ status.mappingStatus }}</td>
+            <td>
+              migrated={{ content.migratedCount ?? 0 }},
+              skipped={{ content.skippedCount ?? 0 }},
+              empty={{ content.skippedEmptyCount ?? 0 }},
+              already migrated={{ content.skippedAlreadyMigratedCount ?? 0 }},
+              already native={{ content.skippedAlreadyNativeCount ?? 0 }},
+              other skipped={{ content.skippedOtherCount ?? 0 }},
+              warnings={{ content.warningCount ?? 0 }},
+              errors={{ content.errorCount ?? 0 }}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5">No Hyper fields detected.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2>Template impact review</h2>
+    <p>Review the CLI mismatch report before finalizing. This release does not rewrite templates automatically.</p>
+    <ul>
+      <li><code>.text</code> becomes <code>.label</code></li>
+      <li><code>getElement()</code> becomes <code>.element</code></li>
+      <li>Hyper class-name type checks become native short handles like <code>entry</code> or <code>url</code></li>
+    </ul>
+  </div>
+{% endblock %}

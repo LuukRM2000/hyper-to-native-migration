@@ -5,9 +5,14 @@ namespace lm2k\hypertolink;
 use Craft;
 use craft\base\Plugin;
 use craft\console\Application as ConsoleApplication;
+use craft\events\RegisterUrlRulesEvent;
+use craft\web\UrlManager;
+use yii\base\Event;
 use lm2k\hypertolink\services\AuditService;
 use lm2k\hypertolink\services\ContentMigrationService;
+use lm2k\hypertolink\services\CutoverService;
 use lm2k\hypertolink\services\FieldMigrationService;
+use lm2k\hypertolink\services\LicenseService;
 use lm2k\hypertolink\services\MappingStrategyService;
 use lm2k\hypertolink\services\ReportService;
 use lm2k\hypertolink\services\StateService;
@@ -15,12 +20,22 @@ use lm2k\hypertolink\services\StateService;
 class HyperToLink extends Plugin
 {
     public const HANDLE = 'link-migrator';
+    public const EDITION_LITE = 'lite';
+    public const EDITION_PRO = 'pro';
 
     public bool $hasCpSettings = false;
-    public bool $hasCpSection = false;
-    public string $schemaVersion = '1.0.0';
+    public bool $hasCpSection = true;
+    public string $schemaVersion = '1.1.0';
 
     public static self $plugin;
+
+    public static function editions(): array
+    {
+        return [
+            self::EDITION_LITE,
+            self::EDITION_PRO,
+        ];
+    }
 
     public function init(): void
     {
@@ -32,12 +47,25 @@ class HyperToLink extends Plugin
             'mappingStrategy' => MappingStrategyService::class,
             'fieldMigration' => FieldMigrationService::class,
             'contentMigration' => ContentMigrationService::class,
+            'cutover' => CutoverService::class,
+            'license' => LicenseService::class,
             'report' => ReportService::class,
             'state' => StateService::class,
         ]);
 
         if (Craft::$app instanceof ConsoleApplication) {
             $this->controllerNamespace = 'lm2k\\hypertolink\\console\\controllers';
+        } else {
+            Event::on(
+                UrlManager::class,
+                UrlManager::EVENT_REGISTER_CP_URL_RULES,
+                static function(RegisterUrlRulesEvent $event) {
+                    $event->rules[static::HANDLE] = static::HANDLE . '/wizard/index';
+                    $event->rules[static::HANDLE . '/prepare'] = static::HANDLE . '/wizard/prepare-fields';
+                    $event->rules[static::HANDLE . '/content'] = static::HANDLE . '/wizard/migrate-content';
+                    $event->rules[static::HANDLE . '/finalize'] = static::HANDLE . '/wizard/finalize';
+                }
+            );
         }
     }
 
@@ -63,6 +91,18 @@ class HyperToLink extends Plugin
     {
         /** @var ContentMigrationService */
         return $this->get('contentMigration');
+    }
+
+    public function getCutover(): CutoverService
+    {
+        /** @var CutoverService */
+        return $this->get('cutover');
+    }
+
+    public function getLicense(): LicenseService
+    {
+        /** @var LicenseService */
+        return $this->get('license');
     }
 
     public function getReport(): ReportService

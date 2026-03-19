@@ -18,7 +18,7 @@ use lm2k\hypertolink\models\MappingDecision;
 
 class ContentMigrationService extends Component
 {
-    private const NATIVE_LINK_TYPES = ['asset', 'category', 'email', 'entry', 'phone', 'sms', 'url'];
+    private const NATIVE_LINK_TYPES = ['asset', 'category', 'email', 'entry', 'phone', 'sms', 'tel', 'url'];
     private array $fieldContextCache = [];
     private array $rawContentCache = [];
     private array $migratedStateCache = [];
@@ -38,7 +38,28 @@ class ContentMigrationService extends Component
                 continue;
             }
 
+            $fieldMapping = HyperToLink::$plugin->getState()->getFieldMapping($fieldAudit->handle);
+            if (!$fieldMapping?->targetHandle) {
+                $result->recordError([
+                    'field' => $fieldAudit->handle,
+                    'reason' => 'Field has not been prepared yet. Run prepare-fields first.',
+                ]);
+                continue;
+            }
+
+            if (!$fieldMapping->targetFieldId || $this->findFieldByHandle($fieldMapping->targetHandle) === null) {
+                $result->recordError([
+                    'field' => $fieldAudit->handle,
+                    'reason' => sprintf(
+                        'Prepared target field `%s` is missing. Re-run prepare-fields.',
+                        $fieldMapping->targetHandle
+                    ),
+                ]);
+                continue;
+            }
+
             $layoutIds = $this->extractLayoutIds($fieldAudit->containers);
+            $fieldHadErrors = false;
             foreach ($this->buildElementQueries($fieldAudit->containers) as $query) {
                 foreach ($query->batch($batchSize) as $batch) {
                     $this->primeBatchCaches($fieldAudit, $batch);
@@ -54,6 +75,13 @@ class ContentMigrationService extends Component
                             if ($this->isMigratedInBatch($element)) {
                                 $this->recordSkipped($result, $options, $fieldAudit->handle, $element, 'Already migrated.');
                                 continue;
+                            }
+
+                            if (!$this->elementSupportsField($element, $fieldMapping->targetHandle, $layoutIds)) {
+                                throw new \RuntimeException(sprintf(
+                                    'Prepared target field `%s` is missing from the element field layout.',
+                                    $fieldMapping->targetHandle
+                                ));
                             }
 
                             $value = $this->getStoredFieldValue($element, $fieldAudit, $fieldContext);
@@ -91,7 +119,7 @@ class ContentMigrationService extends Component
                                 continue;
                             }
 
-                            $element->setFieldValue($runtimeFieldHandle, $conversion['payload']);
+                            $element->setFieldValue($fieldMapping->targetHandle, $conversion['payload']);
                             if (!$elements->saveElement($element, false, false, false)) {
                                 throw new \RuntimeException('saveElement() returned false.');
                             }
@@ -112,6 +140,10 @@ class ContentMigrationService extends Component
                                 'backupPath' => $backupPath,
                             ]);
                         } catch (\Throwable $e) {
+                            $fieldHadErrors = true;
+                            if (empty($options['dryRun']) && $element instanceof ElementInterface) {
+                                HyperToLink::$plugin->getState()->markError('content', $fieldAudit->handle, $element, $e->getMessage());
+                            }
                             $result->recordError([
                                 'field' => $fieldAudit->handle,
                                 'elementId' => $element->id ?? null,
@@ -120,6 +152,10 @@ class ContentMigrationService extends Component
                         }
                     }
                 }
+            }
+
+            if (empty($options['dryRun']) && !$fieldHadErrors) {
+                HyperToLink::$plugin->getState()->markContentMigrated($fieldAudit->handle);
             }
         }
 
@@ -233,6 +269,17 @@ class ContentMigrationService extends Component
     private function isMigratedInBatch(ElementInterface $element): bool
     {
         return $this->migratedStateCache[$this->elementKey($element)] ?? false;
+    }
+
+    private function findFieldByHandle(string $handle): ?object
+    {
+        foreach (Craft::$app->getFields()->getAllFields(false) as $field) {
+            if ((string)$field->handle === $handle) {
+                return $field;
+            }
+        }
+
+        return null;
     }
 
     private function elementSupportsField(ElementInterface $element, string $fieldHandle, array $layoutIds): bool
@@ -488,14 +535,23 @@ class ContentMigrationService extends Component
             'category' => 'category',
             'email' => 'email',
             'entry' => 'entry',
-            'phone' => 'phone',
+            'phone' => 'tel',
             'sms' => 'sms',
             'url' => 'url',
             default => null,
         };
 
         if ($nativeType === null) {
-            if (!$linkValue || !is_scalar($linkValue)) {
+            if ($type === 'product' && $element instanceof ElementInterface) {
+                $resolvedUrl = method_exists($element, 'getUrl') ? $element->getUrl() : ($element->url ?? null);
+                if (is_string($resolvedUrl) && $resolvedUrl !== '') {
+                    $nativeType = 'url';
+                    $linkValue = $resolvedUrl;
+                    $warnings[] = 'Hyper product links were migrated as native URL links.';
+                }
+            }
+
+            if ($nativeType === null && (!$linkValue || !is_scalar($linkValue))) {
                 return [
                     'status' => 'unsupported',
                     'warnings' => [sprintf('Unsupported Hyper link type for content migration: %s', $type ?: 'unknown')],
@@ -503,11 +559,13 @@ class ContentMigrationService extends Component
                 ];
             }
 
-            $nativeType = 'url';
-            $warnings[] = sprintf(
-                'Custom or unsupported Hyper link type "%s" was migrated as a native URL link.',
-                $type ?: 'unknown'
-            );
+            if ($nativeType === null) {
+                $nativeType = 'url';
+                $warnings[] = sprintf(
+                    'Custom or unsupported Hyper link type "%s" was migrated as a native URL link.',
+                    $type ?: 'unknown'
+                );
+            }
         }
 
         if (in_array($type, ['entry', 'asset', 'category'], true)) {
@@ -607,6 +665,7 @@ class ContentMigrationService extends Component
             'asset' => Asset::class,
             'category' => Category::class,
             'entry' => Entry::class,
+            'product' => class_exists('craft\\commerce\\elements\\Product') ? 'craft\\commerce\\elements\\Product' : null,
             default => null,
         };
 

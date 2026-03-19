@@ -1,6 +1,6 @@
 {
   "name": "lm2k/craft-link-migrator",
-  "description": "Migrate Verbb Hyper fields and content to Craft's native Link field with CLI audit and migration commands.",
+  "description": "Staged migration plugin for moving Verbb Hyper fields and content to Craft's native Link field with audit, prepare, content, and finalize workflows.",
   "type": "craft-plugin",
   "keywords": [
     "craftcms",
@@ -36,9 +36,9 @@
   "extra": {
     "name": "Link Migrator",
     "handle": "link-migrator",
-    "description": "CLI-first migration plugin for moving Verbb Hyper fields and content to Craft's native Link field.",
+    "description": "Staged migration plugin for moving Verbb Hyper fields and content to Craft's native Link field safely.",
     "class": "lm2k\\hypertolink\\HyperToLink",
-    "schemaVersion": "1.0.0",
+    "schemaVersion": "1.1.0",
     "developer": "Luuk",
     "developerUrl": "https://github.com/LuukRM2000",
     "documentationUrl": "https://github.com/LuukRM2000/hyper-to-native-migration/blob/main/README.md",

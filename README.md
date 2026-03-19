@@ -1,14 +1,16 @@
 # Link Migrator
 
-Link Migrator is a CLI-first Craft CMS plugin for migrating Verbb Hyper fields to Craft's native Link field.
+Link Migrator is a staged Craft CMS migration plugin for moving Verbb Hyper fields to Craft's native Link field without replacing the original Hyper fields in place.
 
 This plugin is independent and unaffiliated. Verbb Hyper is a plugin by Verbb.
 
 ## What This Plugin Does
 
 - Audits Hyper fields before anything is changed
-- Converts supported Hyper field settings into native Craft Link field settings
-- Migrates existing element content in a separate step
+- Audits Hyper fields before anything is changed
+- Prepares parallel native Craft Link fields for supported Hyper fields
+- Migrates existing element content into those prepared native fields in a separate step
+- Finalizes the cutover by updating field layouts only when you are ready
 - Writes JSON and log reports for every run
 - Optionally writes per-element backup payloads before content changes
 - Tracks migration state so content migration can resume safely
@@ -18,7 +20,7 @@ This plugin is independent and unaffiliated. Verbb Hyper is a plugin by Verbb.
 
 - PHP 8.2+
 - Craft CMS 5.3+
-- Verbb Hyper must remain installed until field migration and content migration are both complete
+- Verbb Hyper must remain installed until prepare, content migration, and finalize are complete
 - Recommended: Craft 5.6+ if you want the fuller native Link advanced field set
 
 ## Installation
@@ -34,26 +36,26 @@ php craft plugin/install link-migrator
 
 ## Recommended Workflow
 
-For most projects, use the orchestration command:
+Run the migration as explicit stages:
 
 ```bash
-php craft link-migrator/migrate/all --dry-run=1 --create-backup=1
-php craft link-migrator/migrate/all --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/audit --dry-run=1
+php craft link-migrator/migrate/prepare-fields --dry-run=1
+php craft link-migrator/migrate/prepare-fields --force=1
+php craft link-migrator/migrate/content --dry-run=1 --create-backup=1
+php craft link-migrator/migrate/content --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/status
+php craft link-migrator/migrate/finalize --dry-run=1
+php craft link-migrator/migrate/finalize --force=1
 ```
-
-`migrate/all` runs:
-
-1. `audit`
-2. `fields`
-3. `content`
 
 Notes:
 
 - In dry-run mode, no changes are written.
 - In write mode, the command refuses to run unless `--force=1` is provided.
-- Field migration still writes project config files that you can review and apply separately if your workflow requires it.
-- `--apply-project-config=0` only suppresses the reminder message; `migrate/all` no longer tries to run `project-config/apply` inline because that conflicts with Craft's config lock during the same process.
-- `--batch-size=100` means the content migration processes 100 elements at a time.
+- `prepare-fields` creates new native Link fields and records source-to-target mappings.
+- `content` writes only into prepared native target fields and leaves Hyper values untouched.
+- `finalize` updates field layouts; it does not delete Hyper fields in v1.
 
 ## Manual Workflow
 
@@ -61,36 +63,26 @@ If you want to inspect every stage yourself, run:
 
 ```bash
 php craft link-migrator/migrate/audit --dry-run=1
-php craft link-migrator/migrate/fields --dry-run=1
-php craft link-migrator/migrate/fields --force=1
+php craft link-migrator/migrate/prepare-fields --dry-run=1
+php craft link-migrator/migrate/prepare-fields --force=1
 php craft project-config/apply
 php craft link-migrator/migrate/content --dry-run=1 --create-backup=1
 php craft link-migrator/migrate/content --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/status
+php craft link-migrator/migrate/finalize --dry-run=1
+php craft link-migrator/migrate/finalize --force=1
 php craft link-migrator/migrate/rollback-info
 ```
 
 A single-field run is also supported:
 
 ```bash
-php craft link-migrator/migrate/fields --field=ctaLink --dry-run=1
+php craft link-migrator/migrate/prepare-fields --field=ctaLink --dry-run=1
 php craft link-migrator/migrate/content --field=ctaLink --force=1 --create-backup=1
+php craft link-migrator/migrate/finalize --field=ctaLink --force=1
 ```
 
 ## Commands
-
-### `link-migrator/migrate/all`
-
-Runs audit, field migration, and content migration in sequence.
-
-Common options:
-
-- `--dry-run=1`
-- `--force=1`
-- `--field=handle`
-- `--create-backup=1`
-- `--batch-size=100`
-- `--apply-project-config=0`
-- `--verbose=1`
 
 ### `link-migrator/migrate/audit`
 
@@ -102,27 +94,43 @@ Useful when:
 - you want to see unsupported link types before changing anything
 - you want a machine-readable report of the current state
 
-### `link-migrator/migrate/fields`
+### `link-migrator/migrate/prepare-fields`
 
-Migrates supported Hyper field definitions to Craft Link field definitions.
+Prepares supported Hyper field definitions by creating new native Craft Link fields and persisting source-to-target mappings.
 
 Important:
 
 - non-dry runs require `--force=1`
 - unsupported fields are skipped
 - this changes field configuration, not content
+- source Hyper fields remain intact
 
 ### `link-migrator/migrate/content`
 
-Migrates existing content values into `craft\fields\data\LinkData`.
+Migrates existing content values into the prepared native target fields.
 
 Important:
 
 - non-dry runs require `--force=1`
+- requires `prepare-fields` to have completed first
 - content writes are resumable
 - already migrated element/site pairs are skipped on later runs
 - optional backups are written before content is changed
 - if you want to run `php craft project-config/apply`, do it as a separate command after the migration run
+
+### `link-migrator/migrate/status`
+
+Shows the current staged workflow status for each Hyper field, including prepared target handles and content migration counters.
+
+### `link-migrator/migrate/finalize`
+
+Removes Hyper fields from field layouts and leaves the prepared native Link fields in place.
+
+Important:
+
+- non-dry runs require `--force=1`
+- requires `prepare-fields` and `content` to have completed first
+- does not delete Hyper fields in v1
 
 ### `link-migrator/migrate/mismatches`
 
@@ -179,6 +187,7 @@ Migrated advanced attributes:
 Field configuration defaults:
 
 - the native Link field label field is enabled by default
+- target field handles default to `<sourceHandle>Native`
 
 Partially supported or lossy cases:
 
@@ -194,6 +203,23 @@ Unsupported cases:
 - user/site/plugin-specific link types without a native Link equivalent
 
 Unsupported values are skipped and reported. They are not silently coerced.
+
+## Editions
+
+`Lite` allows:
+
+- audit
+- mismatch scanning
+- dry-run workflows
+- status reporting
+- CP wizard visibility
+
+`Pro` unlocks:
+
+- preparing native fields
+- content writes
+- backups
+- finalize cutover
 
 ## What Gets Persisted
 
@@ -217,6 +243,18 @@ When `--create-backup=1` is used during content migration, per-element backup pa
 ```text
 storage/runtime/link-migrator/backups/
 ```
+
+## Control Panel Wizard
+
+The plugin now exposes a CP section with a staged wizard:
+
+1. Scan
+2. Prepare Native Fields
+3. Migrate Content
+4. Template Impact Review
+5. Finalize
+
+Lite/trial users can inspect the workflow, but write actions are disabled until the plugin is running in the `Pro` edition with a valid Craft plugin license state.
 
 ### Migration state
 
@@ -257,13 +295,19 @@ Dry run everything first:
 
 ```bash
 php craft link-migrator/migrate/mismatches
-php craft link-migrator/migrate/all --dry-run=1 --create-backup=1
+php craft link-migrator/migrate/audit --dry-run=1
+php craft link-migrator/migrate/prepare-fields --dry-run=1
+php craft link-migrator/migrate/content --dry-run=1 --create-backup=1
+php craft link-migrator/migrate/finalize --dry-run=1
 ```
 
 Then perform the real migration:
 
 ```bash
-php craft link-migrator/migrate/all --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/prepare-fields --force=1
+php craft link-migrator/migrate/content --force=1 --create-backup=1 --batch-size=100
+php craft link-migrator/migrate/status
+php craft link-migrator/migrate/finalize --force=1
 php craft link-migrator/migrate/rollback-info
 ```
 

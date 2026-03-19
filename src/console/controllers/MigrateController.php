@@ -51,8 +51,21 @@ class MigrateController extends Controller
 
     public function actionFields(): int
     {
+        $this->stderr("`fields` is deprecated. Use `prepare-fields`.\n", Console::FG_RED);
+        return ExitCode::UNSPECIFIED_ERROR;
+    }
+
+    public function actionPrepareFields(): int
+    {
         if (!$this->dryRun && !$this->force) {
-            $this->stderr("Refusing to mutate field config without --force.\n", Console::FG_RED);
+            $this->stderr("Refusing to prepare native fields without --force.\n", Console::FG_RED);
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        try {
+            HyperToLink::$plugin->getLicense()->requireWriteAccess($this->dryRun);
+        } catch (\Throwable $e) {
+            $this->stderr($e->getMessage() . "\n", Console::FG_RED);
             return ExitCode::UNSPECIFIED_ERROR;
         }
 
@@ -67,50 +80,84 @@ class MigrateController extends Controller
             return ExitCode::UNSPECIFIED_ERROR;
         }
 
+        try {
+            HyperToLink::$plugin->getLicense()->requireWriteAccess($this->dryRun);
+        } catch (\Throwable $e) {
+            $this->stderr($e->getMessage() . "\n", Console::FG_RED);
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
         [, $exitCode] = $this->runContentStage();
         return $exitCode;
     }
 
     public function actionAll(): int
     {
-        $this->stdout("Running full Link Migrator workflow.\n\n", Console::FG_YELLOW);
+        $this->stderr(
+            "`all` is no longer part of the recommended production workflow. Run `audit`, `prepare-fields`, `content`, and `finalize` explicitly.\n",
+            Console::FG_RED
+        );
+        return ExitCode::UNSPECIFIED_ERROR;
+    }
 
-        [$audit, $auditExitCode] = $this->runAuditStage();
-        if ($auditExitCode !== ExitCode::OK) {
-            $this->stderr("Audit found blocking issues. Resolve them before running the full workflow.\n", Console::FG_RED);
-            return $auditExitCode;
+    public function actionStatus(): int
+    {
+        $plugin = HyperToLink::$plugin;
+        $audit = $plugin->getAudit()->buildAudit($this->field);
+        $plugin->getState()->syncAuditedFields($audit);
+
+        $statuses = $plugin->getState()->workflowStatuses($audit, $this->field);
+        foreach ($statuses as $status) {
+            $content = $status['contentSummary'] ?? [];
+            $this->stdout(sprintf(
+                "%s | phase=%s | target=%s | migrated=%s skipped=%s (empty=%s, already-migrated=%s, already-native=%s, other=%s) warnings=%s errors=%s\n",
+                $status['sourceHandle'],
+                $status['phase'],
+                $status['targetHandle'] ?? 'n/a',
+                $content['migratedCount'] ?? 0,
+                $content['skippedCount'] ?? 0,
+                $content['skippedEmptyCount'] ?? 0,
+                $content['skippedAlreadyMigratedCount'] ?? 0,
+                $content['skippedAlreadyNativeCount'] ?? 0,
+                $content['skippedOtherCount'] ?? 0,
+                $content['warningCount'] ?? 0,
+                $content['errorCount'] ?? 0,
+            ));
         }
 
+        return ExitCode::OK;
+    }
+
+    public function actionFinalize(): int
+    {
         if (!$this->dryRun && !$this->force) {
-            $this->stderr("Refusing to run the full workflow without --force.\n", Console::FG_RED);
+            $this->stderr("Refusing to finalize layout cutover without --force.\n", Console::FG_RED);
             return ExitCode::UNSPECIFIED_ERROR;
         }
 
-        [, $fieldExitCode] = $this->runFieldStage($audit);
-        if ($fieldExitCode !== ExitCode::OK) {
-            return $fieldExitCode;
+        try {
+            HyperToLink::$plugin->getLicense()->requireWriteAccess($this->dryRun);
+        } catch (\Throwable $e) {
+            $this->stderr($e->getMessage() . "\n", Console::FG_RED);
+            return ExitCode::UNSPECIFIED_ERROR;
         }
 
-        if ($this->dryRun) {
-            $this->stdout("Skipping project config apply during dry run.\n", Console::FG_YELLOW);
-        } elseif ($this->applyProjectConfig) {
-            $this->stdout(
-                "Project config files were updated during field migration.\n" .
-                "Skipping inline project-config/apply because Craft already holds the config lock in this process.\n" .
-                "Run `php craft project-config/apply` separately after this command if your environment requires it.\n",
-                Console::FG_YELLOW
-            );
-        } else {
-            $this->stdout("Skipping project config apply because --apply-project-config=0 was provided.\n", Console::FG_YELLOW);
-        }
+        $plugin = HyperToLink::$plugin;
+        $report = $plugin->getReport()->beginRun('finalize', $this->dryRun, $this->verbose);
+        $audit = $plugin->getAudit()->buildAudit($this->field);
+        $plugin->getState()->syncAuditedFields($audit);
+        $plugin->getReport()->writePreflight($report, $audit, $this, 'finalize cutover');
 
-        [, $contentExitCode] = $this->runContentStage($audit);
-        if ($contentExitCode !== ExitCode::OK) {
-            return $contentExitCode;
-        }
+        $result = $plugin->getCutover()->finalize($audit, [
+            'field' => $this->field,
+            'dryRun' => $this->dryRun,
+            'force' => $this->force,
+        ]);
 
-        $this->stdout("\nFull Link Migrator workflow completed successfully.\n", Console::FG_GREEN);
-        return ExitCode::OK;
+        $plugin->getReport()->writeCutoverResult($report, $result, $this);
+        $this->stdout("Finalize report written to {$report->reportPath}\n", Console::FG_GREEN);
+
+        return $result->hasErrors() ? ExitCode::UNSPECIFIED_ERROR : ExitCode::OK;
     }
 
     public function actionRollbackInfo(): int
@@ -120,12 +167,13 @@ class MigrateController extends Controller
 
         foreach ($records as $record) {
             $this->stdout(sprintf(
-                "%s | %s | migrated=%d skipped=%d warnings=%d backups=%d last=%s\n",
+                "%s | %s | migrated=%d skipped=%d warnings=%d errors=%d backups=%d last=%s\n",
                 $record['action'],
                 $record['fieldHandle'],
                 $record['migratedCount'],
                 $record['skippedCount'],
                 $record['warningCount'],
+                $record['errorCount'],
                 $record['backupCount'],
                 $record['dateUpdated'] ?? 'n/a'
             ));
@@ -174,6 +222,7 @@ class MigrateController extends Controller
         $plugin = HyperToLink::$plugin;
         $report = $plugin->getReport()->beginRun('audit', $this->dryRun, $this->verbose);
         $audit = $plugin->getAudit()->buildAudit($this->field);
+        $plugin->getState()->syncAuditedFields($audit);
         $plugin->getReport()->writeAudit($report, $audit, $this);
         $this->stdout("Audit written to {$report->reportPath}\n", Console::FG_GREEN);
 
@@ -184,8 +233,9 @@ class MigrateController extends Controller
     {
         $plugin = HyperToLink::$plugin;
         $audit ??= $plugin->getAudit()->buildAudit($this->field);
-        $report = $plugin->getReport()->beginRun('fields', $this->dryRun, $this->verbose);
-        $plugin->getReport()->writePreflight($report, $audit, $this, 'field/config migration');
+        $plugin->getState()->syncAuditedFields($audit);
+        $report = $plugin->getReport()->beginRun('prepare-fields', $this->dryRun, $this->verbose);
+        $plugin->getReport()->writePreflight($report, $audit, $this, 'prepare native fields');
 
         $result = $plugin->getFieldMigration()->migrate($audit, [
             'field' => $this->field,
@@ -204,6 +254,7 @@ class MigrateController extends Controller
     {
         $plugin = HyperToLink::$plugin;
         $audit ??= $plugin->getAudit()->buildAudit($this->field);
+        $plugin->getState()->syncAuditedFields($audit);
         $report = $plugin->getReport()->beginRun('content', $this->dryRun, $this->verbose);
         $plugin->getReport()->writePreflight($report, $audit, $this, 'content migration');
 
