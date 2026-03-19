@@ -91,19 +91,28 @@ class ContentMigrationService extends Component
                                 continue;
                             }
 
-                            $element->setFieldValue($runtimeFieldHandle, $conversion['payload']);
-                            if (!$elements->saveElement($element, false, false, false)) {
-                                throw new \RuntimeException('saveElement() returned false.');
+                            $transaction = Craft::$app->getDb()->beginTransaction();
+                            try {
+                                $element->setFieldValue($runtimeFieldHandle, $conversion['payload']);
+                                if (!$elements->saveElement($element, false, false, false)) {
+                                    throw new \RuntimeException('saveElement() returned false.');
+                                }
+
+                                HyperToLink::$plugin->getState()->markMigrated(
+                                    'content',
+                                    $fieldAudit->handle,
+                                    $element,
+                                    $conversion['warnings'],
+                                    $conversion['backup'],
+                                    $backupPath
+                                );
+
+                                $transaction->commit();
+                            } catch (\Throwable $exception) {
+                                $transaction->rollBack();
+                                throw $exception;
                             }
 
-                            HyperToLink::$plugin->getState()->markMigrated(
-                                'content',
-                                $fieldAudit->handle,
-                                $element,
-                                $conversion['warnings'],
-                                $conversion['backup'],
-                                $backupPath
-                            );
                             $result->addMigrated([
                                 'field' => $fieldAudit->handle,
                                 'elementId' => $element->id,
@@ -495,10 +504,13 @@ class ContentMigrationService extends Component
         };
 
         if ($nativeType === null) {
-            if (!$linkValue || !is_scalar($linkValue)) {
+            if (!$this->canFallbackToUrl($linkValue)) {
                 return [
                     'status' => 'unsupported',
-                    'warnings' => [sprintf('Unsupported Hyper link type for content migration: %s', $type ?: 'unknown')],
+                    'warnings' => [sprintf(
+                        'Unsupported Hyper link type for content migration: %s. No safe URL-like fallback value was found.',
+                        $type ?: 'unknown'
+                    )],
                     'backup' => $backup,
                 ];
             }
@@ -526,7 +538,7 @@ class ContentMigrationService extends Component
             'type' => $nativeType,
             'value' => $linkValue,
             'label' => $text,
-            'target' => $target ? '_blank' : null,
+            'target' => $this->normalizeTarget($target),
             'urlSuffix' => $urlSuffix,
             'title' => $title,
             'class' => $class,
@@ -541,7 +553,7 @@ class ContentMigrationService extends Component
                 'type' => $nativeType,
                 'value' => $linkValue,
                 'label' => $text,
-                'target' => $target ? '_blank' : null,
+                'target' => $this->normalizeTarget($target),
             ],
             'warnings' => $warnings,
             'backup' => $backup,
@@ -629,6 +641,47 @@ class ContentMigrationService extends Component
 
         $element = $query->one();
         return $element instanceof ElementInterface ? $element : null;
+    }
+
+    private function canFallbackToUrl(mixed $value): bool
+    {
+        if (!is_string($value)) {
+            return false;
+        }
+
+        $value = trim($value);
+        if ($value === '') {
+            return false;
+        }
+
+        if (filter_var($value, FILTER_VALIDATE_URL)) {
+            return true;
+        }
+
+        return str_starts_with($value, '/')
+            || str_starts_with($value, '#')
+            || str_starts_with($value, '?')
+            || str_starts_with($value, 'mailto:')
+            || str_starts_with($value, 'tel:')
+            || str_starts_with($value, 'sms:');
+    }
+
+    private function normalizeTarget(mixed $target): ?string
+    {
+        if (is_string($target)) {
+            $target = trim($target);
+            return $target !== '' ? $target : null;
+        }
+
+        if (is_bool($target)) {
+            return $target ? '_blank' : null;
+        }
+
+        if (is_numeric($target)) {
+            return ((int)$target) === 1 ? '_blank' : null;
+        }
+
+        return null;
     }
 
     private function backupPayload(mixed $value): array

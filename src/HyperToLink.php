@@ -8,6 +8,7 @@ use craft\console\Application as ConsoleApplication;
 use lm2k\hypertolink\services\AuditService;
 use lm2k\hypertolink\services\ContentMigrationService;
 use lm2k\hypertolink\services\FieldMigrationService;
+use lm2k\hypertolink\services\MetadataService;
 use lm2k\hypertolink\services\MappingStrategyService;
 use lm2k\hypertolink\services\ReportService;
 use lm2k\hypertolink\services\StateService;
@@ -18,7 +19,7 @@ class HyperToLink extends Plugin
 
     public bool $hasCpSettings = false;
     public bool $hasCpSection = false;
-    public string $schemaVersion = '1.0.0';
+    public string $schemaVersion = '1.0.1';
 
     public static self $plugin;
 
@@ -32,6 +33,7 @@ class HyperToLink extends Plugin
             'mappingStrategy' => MappingStrategyService::class,
             'fieldMigration' => FieldMigrationService::class,
             'contentMigration' => ContentMigrationService::class,
+            'metadata' => MetadataService::class,
             'report' => ReportService::class,
             'state' => StateService::class,
         ]);
@@ -63,6 +65,12 @@ class HyperToLink extends Plugin
     {
         /** @var ContentMigrationService */
         return $this->get('contentMigration');
+    }
+
+    public function getMetadata(): MetadataService
+    {
+        /** @var MetadataService */
+        return $this->get('metadata');
     }
 
     public function getReport(): ReportService

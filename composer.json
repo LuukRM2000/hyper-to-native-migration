@@ -38,7 +38,7 @@
     "handle": "link-migrator",
     "description": "CLI-first migration plugin for moving Verbb Hyper fields and content to Craft's native Link field.",
     "class": "lm2k\\hypertolink\\HyperToLink",
-    "schemaVersion": "1.0.0",
+    "schemaVersion": "1.0.1",
     "developer": "Luuk",
     "developerUrl": "https://github.com/LuukRM2000",
     "documentationUrl": "https://github.com/LuukRM2000/hyper-to-native-migration/blob/main/README.md",

@@ -36,8 +36,9 @@ class MappingStrategyService extends Component
             }
 
             $decision->craftLinkTypes[] = 'url';
+            $decision->unsupportedReasons[] = sprintf('Unsupported Hyper link type: %s', $type);
             $decision->warnings[] = sprintf(
-                'Custom or unsupported Hyper link type "%s" will be migrated as a native URL link.',
+                'Custom or unsupported Hyper link type "%s" will only fall back to a native URL when the stored value is URL-like.',
                 $type
             );
             $decision->lossyAttributes[] = 'customTypeFallback';

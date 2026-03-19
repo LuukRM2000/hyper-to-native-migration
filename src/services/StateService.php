@@ -149,6 +149,12 @@ class StateService extends Component
         $record->warningsJson = json_encode(array_values($warnings), JSON_UNESCAPED_SLASHES);
         $record->backupJson = $backup ? json_encode($backup, JSON_UNESCAPED_SLASHES) : null;
         $record->backupPath = $backupPath;
-        $record->save(false);
+        if (!$record->save(false)) {
+            throw new \RuntimeException(sprintf(
+                'Failed to persist migration state for field "%s" on element %s.',
+                $fieldHandle,
+                $element->id ?? 'unknown'
+            ));
+        }
     }
 }

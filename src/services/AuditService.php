@@ -184,68 +184,112 @@ class AuditService extends Component
      */
     private function recoverMigratedLinkFields(?string $fieldHandle, array $existingHandles): array
     {
-        $baseDir = Craft::getAlias('@storage/runtime/link-migrator');
-        if (!$baseDir || !is_dir($baseDir)) {
-            return [];
+        $recovered = [];
+        foreach ($this->recoverMigratedLinkFieldsFromMetadata($fieldHandle, $existingHandles) as $audit) {
+            $recovered[$audit->handle] = $audit;
         }
 
-        $reports = glob($baseDir . DIRECTORY_SEPARATOR . '*-fields.json') ?: [];
-        rsort($reports, SORT_STRING);
-
-        foreach ($reports as $reportPath) {
-            $payload = json_decode((string)file_get_contents($reportPath), true);
-            if (!is_array($payload)) {
+        foreach ($this->legacyRuntimeDirectories() as $baseDir) {
+            if (!$baseDir || !is_dir($baseDir)) {
                 continue;
             }
 
-            $recovered = [];
-            foreach (($payload['migrated'] ?? []) as $item) {
-                $handle = $item['field'] ?? null;
-                if (!is_string($handle) || $handle === '') {
+            $reports = glob($baseDir . DIRECTORY_SEPARATOR . '*-fields.json') ?: [];
+            rsort($reports, SORT_STRING);
+
+            foreach ($reports as $reportPath) {
+                $payload = json_decode((string)file_get_contents($reportPath), true);
+                if (!is_array($payload)) {
                     continue;
                 }
 
-                if ($fieldHandle && $handle !== $fieldHandle) {
-                    continue;
+                foreach (($payload['migrated'] ?? []) as $item) {
+                    $handle = $item['field'] ?? null;
+                    if (!is_string($handle) || $handle === '') {
+                        continue;
+                    }
+
+                    if ($fieldHandle && $handle !== $fieldHandle) {
+                        continue;
+                    }
+
+                    if (in_array($handle, $existingHandles, true) || isset($recovered[$handle])) {
+                        continue;
+                    }
+
+                    $field = $this->findFieldByHandle($handle);
+                    if (!$field || !$field instanceof Link) {
+                        continue;
+                    }
+
+                    $mapping = new MappingDecision([
+                        'status' => (string)($item['status'] ?? MappingDecision::STATUS_PARTIAL),
+                        'craftLinkTypes' => $field->types,
+                        'advancedFields' => $field->advancedFields,
+                    ]);
+
+                    $audit = new FieldAudit([
+                        'fieldId' => (int)$field->id,
+                        'uid' => (string)$field->uid,
+                        'handle' => (string)$field->handle,
+                        'name' => (string)$field->name,
+                        'multi' => false,
+                        'allowedHyperTypes' => $field->types,
+                        'containers' => $this->discoverContainers($field),
+                        'rawSettings' => method_exists($field, 'getSettings') ? $field->getSettings() : [],
+                    ]);
+                    $audit->mapping = $mapping;
+                    $audit->warnings = $mapping->warnings;
+
+                    $recovered[$audit->handle] = $audit;
                 }
 
-                if (in_array($handle, $existingHandles, true)) {
-                    continue;
+                if ($recovered !== []) {
+                    return array_values($recovered);
                 }
-
-                $field = $this->findFieldByHandle($handle);
-                if (!$field || !$field instanceof Link) {
-                    continue;
-                }
-
-                $mapping = new MappingDecision([
-                    'status' => (string)($item['status'] ?? MappingDecision::STATUS_PARTIAL),
-                    'craftLinkTypes' => $field->types,
-                    'advancedFields' => $field->advancedFields,
-                ]);
-
-                $audit = new FieldAudit([
-                    'fieldId' => (int)$field->id,
-                    'uid' => (string)$field->uid,
-                    'handle' => (string)$field->handle,
-                    'name' => (string)$field->name,
-                    'multi' => false,
-                    'allowedHyperTypes' => $field->types,
-                    'containers' => $this->discoverContainers($field),
-                    'rawSettings' => method_exists($field, 'getSettings') ? $field->getSettings() : [],
-                ]);
-                $audit->mapping = $mapping;
-                $audit->warnings = $mapping->warnings;
-
-                $recovered[] = $audit;
-            }
-
-            if ($recovered !== []) {
-                return $recovered;
             }
         }
 
-        return [];
+        return array_values($recovered);
+    }
+
+    /**
+     * @return FieldAudit[]
+     */
+    private function recoverMigratedLinkFieldsFromMetadata(?string $fieldHandle, array $existingHandles): array
+    {
+        $recovered = [];
+        foreach (HyperToLink::$plugin->getMetadata()->getMigratedFields($fieldHandle) as $metadata) {
+            $handle = (string)($metadata['handle'] ?? '');
+            if ($handle === '' || in_array($handle, $existingHandles, true)) {
+                continue;
+            }
+
+            $field = $this->findFieldByUid((string)($metadata['uid'] ?? '')) ?? $this->findFieldByHandle($handle);
+            if (!$field instanceof Link) {
+                continue;
+            }
+
+            $mapping = new MappingDecision(is_array($metadata['mapping'] ?? null) ? $metadata['mapping'] : []);
+
+            $audit = new FieldAudit([
+                'fieldId' => (int)$field->id,
+                'uid' => (string)$field->uid,
+                'handle' => (string)$field->handle,
+                'name' => (string)$field->name,
+                'multi' => false,
+                'allowedHyperTypes' => is_array($metadata['allowedHyperTypes'] ?? null) ? $metadata['allowedHyperTypes'] : $field->types,
+                'customFieldLayouts' => is_array($metadata['customFieldLayouts'] ?? null) ? $metadata['customFieldLayouts'] : [],
+                'containers' => $this->discoverContainers($field),
+                'rawSettings' => method_exists($field, 'getSettings') ? $field->getSettings() : [],
+            ]);
+            $audit->mapping = $mapping;
+            $audit->warnings = $mapping->warnings;
+
+            $recovered[] = $audit;
+        }
+
+        return $recovered;
     }
 
     private function findFieldByHandle(string $handle): ?object
@@ -257,6 +301,29 @@ class AuditService extends Component
         }
 
         return null;
+    }
+
+    private function findFieldByUid(string $uid): ?object
+    {
+        if ($uid === '') {
+            return null;
+        }
+
+        foreach (Craft::$app->getFields()->getAllFields(false) as $field) {
+            if ((string)$field->uid === $uid) {
+                return $field;
+            }
+        }
+
+        return null;
+    }
+
+    private function legacyRuntimeDirectories(): array
+    {
+        return array_values(array_unique(array_filter([
+            Craft::getAlias('@storage/runtime/link-migrator'),
+            Craft::getAlias('@storage/runtime/hyper-to-link'),
+        ])));
     }
 
     private function findCodeReferences(): array

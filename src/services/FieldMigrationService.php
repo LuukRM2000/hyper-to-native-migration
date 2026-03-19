@@ -5,6 +5,7 @@ namespace lm2k\hypertolink\services;
 use Craft;
 use craft\base\Component;
 use craft\fields\Link;
+use lm2k\hypertolink\HyperToLink;
 use lm2k\hypertolink\models\AuditResult;
 use lm2k\hypertolink\models\FieldMigrationResult;
 use lm2k\hypertolink\models\MappingDecision;
@@ -53,6 +54,8 @@ class FieldMigrationService extends Component
                     if (!$saved) {
                         throw new \RuntimeException('saveField() returned false.');
                     }
+
+                    HyperToLink::$plugin->getMetadata()->recordFieldMigration($linkField, $fieldAudit);
 
                     $transaction->commit();
                 } catch (\Throwable $e) {
