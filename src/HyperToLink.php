@@ -9,6 +9,7 @@ use lm2k\hypertolink\services\AuditService;
 use lm2k\hypertolink\services\ContentMigrationService;
 use lm2k\hypertolink\services\FieldMigrationService;
 use lm2k\hypertolink\services\MetadataService;
+use lm2k\hypertolink\services\MigrationRunnerService;
 use lm2k\hypertolink\services\MappingStrategyService;
 use lm2k\hypertolink\services\ReportService;
 use lm2k\hypertolink\services\StateService;
@@ -18,7 +19,7 @@ class HyperToLink extends Plugin
     public const HANDLE = 'link-migrator';
 
     public bool $hasCpSettings = false;
-    public bool $hasCpSection = false;
+    public bool $hasCpSection = true;
     public string $schemaVersion = '1.0.1';
 
     public static self $plugin;
@@ -36,6 +37,7 @@ class HyperToLink extends Plugin
             'metadata' => MetadataService::class,
             'report' => ReportService::class,
             'state' => StateService::class,
+            'runner' => MigrationRunnerService::class,
         ]);
 
         if (Craft::$app instanceof ConsoleApplication) {
@@ -83,5 +85,11 @@ class HyperToLink extends Plugin
     {
         /** @var StateService */
         return $this->get('state');
+    }
+
+    public function getRunner(): MigrationRunnerService
+    {
+        /** @var MigrationRunnerService */
+        return $this->get('runner');
     }
 }

@@ -32,7 +32,43 @@ class ReportService extends Component
 
     public function writeAudit(MigrationReport $report, AuditResult $audit, Controller $controller): void
     {
-        $payload = [
+        $payload = $this->buildAuditPayload($audit);
+
+        $this->persist($report, $payload);
+        $controller->stdout($this->renderSummary($payload['summary']));
+    }
+
+    public function writePreflight(MigrationReport $report, AuditResult $audit, Controller $controller, string $label): void
+    {
+        $summary = $this->buildPreflightSummary($audit);
+
+        $controller->stdout(strtoupper($label) . "\n");
+        $controller->stdout($this->renderSummary($summary));
+        $controller->stdout("Warnings:\n");
+        $controller->stdout("- Back up the database and project config before non-dry runs.\n");
+        $controller->stdout("- Content writes are irreversible without manual restoration from backups.\n");
+        $controller->stdout("- Hyper will remain installed; do not uninstall it until reports are clean.\n\n");
+    }
+
+    public function writeFieldResult(MigrationReport $report, FieldMigrationResult $result, Controller $controller): void
+    {
+        $payload = $this->buildFieldPayload($result);
+
+        $this->persist($report, $payload);
+        $controller->stdout($this->renderSummary($payload['summary']));
+    }
+
+    public function writeContentResult(MigrationReport $report, ContentMigrationResult $result, Controller $controller): void
+    {
+        $payload = $this->buildContentPayload($result);
+
+        $this->persist($report, $payload);
+        $controller->stdout($this->renderSummary($payload['summary']));
+    }
+
+    public function buildAuditPayload(AuditResult $audit): array
+    {
+        return [
             'summary' => [
                 'fields' => count($audit->fields),
                 'supported' => count(array_filter($audit->fields, fn($field) => $field->mapping->status === 'supported')),
@@ -58,31 +94,21 @@ class ReportService extends Component
             'mismatches' => $audit->mismatchReferences,
             'notes' => $audit->notes,
         ];
-
-        $this->persist($report, $payload);
-        $controller->stdout($this->renderSummary($payload['summary']));
     }
 
-    public function writePreflight(MigrationReport $report, AuditResult $audit, Controller $controller, string $label): void
+    public function buildPreflightSummary(AuditResult $audit): array
     {
-        $summary = [
+        return [
             'fields' => count($audit->fields),
             'supported' => count(array_filter($audit->fields, fn($field) => $field->mapping->status === 'supported')),
             'partial' => count(array_filter($audit->fields, fn($field) => $field->mapping->status === 'partial')),
             'unsupported' => count(array_filter($audit->fields, fn($field) => $field->mapping->status === 'unsupported')),
         ];
-
-        $controller->stdout(strtoupper($label) . "\n");
-        $controller->stdout($this->renderSummary($summary));
-        $controller->stdout("Warnings:\n");
-        $controller->stdout("- Back up the database and project config before non-dry runs.\n");
-        $controller->stdout("- Content writes are irreversible without manual restoration from backups.\n");
-        $controller->stdout("- Hyper will remain installed; do not uninstall it until reports are clean.\n\n");
     }
 
-    public function writeFieldResult(MigrationReport $report, FieldMigrationResult $result, Controller $controller): void
+    public function buildFieldPayload(FieldMigrationResult $result): array
     {
-        $payload = [
+        return [
             'summary' => [
                 'migrated' => count($result->migrated),
                 'skipped' => count($result->skipped),
@@ -94,14 +120,11 @@ class ReportService extends Component
             'warnings' => $result->warnings,
             'errors' => $result->errors,
         ];
-
-        $this->persist($report, $payload);
-        $controller->stdout($this->renderSummary($payload['summary']));
     }
 
-    public function writeContentResult(MigrationReport $report, ContentMigrationResult $result, Controller $controller): void
+    public function buildContentPayload(ContentMigrationResult $result): array
     {
-        $payload = [
+        return [
             'summary' => [
                 'migrated' => $result->migratedCount,
                 'skipped' => $result->skippedCount,
@@ -123,18 +146,15 @@ class ReportService extends Component
             'errors' => $result->errors,
             'backups' => $result->backups,
         ];
-
-        $this->persist($report, $payload);
-        $controller->stdout($this->renderSummary($payload['summary']));
     }
 
-    private function persist(MigrationReport $report, array $payload): void
+    public function persist(MigrationReport $report, array $payload): void
     {
         file_put_contents($report->jsonPath, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
         file_put_contents($report->reportPath, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
     }
 
-    private function renderSummary(array $summary): string
+    public function renderSummary(array $summary): string
     {
         $lines = [];
         foreach ($summary as $key => $value) {

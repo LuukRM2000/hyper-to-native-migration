@@ -1,0 +1,188 @@
+{% extends "_layouts/cp" %}
+{% import "_includes/forms.twig" as forms %}
+
+{% set title = "Link Migrator" %}
+{% set fullPageForm = false %}
+{% set formValues = formValues ?? {
+    workflowAction: 'all',
+    field: null,
+    dryRun: true,
+    createBackup: true,
+    batchSize: 100,
+    applyProjectConfig: true,
+    verbose: false,
+} %}
+{% set actionOptions = [
+    { label: 'Full workflow', value: 'all' },
+    { label: 'Audit only', value: 'audit' },
+    { label: 'Field migration', value: 'fields' },
+    { label: 'Content migration', value: 'content' },
+    { label: 'Mismatch scan', value: 'mismatches' },
+    { label: 'Rollback info', value: 'rollback-info' },
+] %}
+
+{% css %}
+    .lm-grid {
+        display: grid;
+        gap: 24px;
+    }
+
+    .lm-run-output {
+        display: grid;
+        gap: 16px;
+        margin-top: 24px;
+    }
+
+    .lm-message {
+        border: 1px solid var(--hairlineColor);
+        border-left-width: 4px;
+        border-radius: 8px;
+        padding: 14px 16px;
+        background: var(--light);
+    }
+
+    .lm-message--info {
+        border-left-color: var(--linkColor);
+    }
+
+    .lm-message--success {
+        border-left-color: var(--successColor);
+    }
+
+    .lm-message--warning {
+        border-left-color: var(--warningColor);
+    }
+
+    .lm-message--error {
+        border-left-color: var(--errorColor);
+    }
+
+    .lm-message pre,
+    .lm-run-card pre {
+        margin: 0;
+        white-space: pre-wrap;
+        font: 12px/1.5 var(--monospace-font);
+    }
+
+    .lm-run-card {
+        border: 1px solid var(--hairlineColor);
+        border-radius: 10px;
+        padding: 16px;
+        background: var(--white);
+    }
+
+    .lm-run-card h2,
+    .lm-run-card h3 {
+        margin-top: 0;
+    }
+
+    .lm-meta {
+        margin-top: 12px;
+        color: var(--mediumTextColor);
+        font-size: 12px;
+    }
+{% endcss %}
+
+{% block content %}
+    <div class="lm-grid">
+        <div class="readable">
+            <p>Run the Hyper to Link migration from the control panel. Use a dry run first, then rerun with dry run disabled to write field config and content.</p>
+        </div>
+
+        <form method="post" accept-charset="UTF-8">
+            {{ csrfInput() }}
+            {{ actionInput('link-migrator/migrate/run') }}
+
+            {{ forms.selectField({
+                label: 'Action',
+                id: 'workflowAction',
+                name: 'workflowAction',
+                options: actionOptions,
+                value: formValues.workflowAction,
+                instructions: 'Choose the migration stage you want to run from the control panel.',
+            }) }}
+
+            {{ forms.textField({
+                label: 'Field handle',
+                id: 'field',
+                name: 'field',
+                value: formValues.field,
+                placeholder: 'Leave empty to process every Hyper field',
+                instructions: 'Optional. Limit the run to a single Hyper field handle.',
+            }) }}
+
+            {{ forms.textField({
+                label: 'Batch size',
+                id: 'batchSize',
+                name: 'batchSize',
+                type: 'number',
+                min: 1,
+                value: formValues.batchSize,
+                instructions: 'Used by content migration. Lower it if your environment has tighter request limits.',
+            }) }}
+
+            {{ forms.checkboxField({
+                label: 'Dry run',
+                name: 'dryRun',
+                checked: formValues.dryRun,
+                toggle: 'dry-run-note',
+                instructions: 'Recommended first. When enabled, no field config or content writes are committed.',
+            }) }}
+
+            <div id="dry-run-note" class="readable{% if not formValues.dryRun %} hidden{% endif %}">
+                <p>When dry run is disabled, this UI will run the write mode automatically. There is no separate force checkbox in the control panel.</p>
+            </div>
+
+            {{ forms.checkboxField({
+                label: 'Create backups during content migration',
+                name: 'createBackup',
+                checked: formValues.createBackup,
+                instructions: 'Writes per-element backup payloads before content values are changed.',
+            }) }}
+
+            {{ forms.checkboxField({
+                label: 'Show verbose reports',
+                name: 'verbose',
+                checked: formValues.verbose,
+            }) }}
+
+            {{ forms.checkboxField({
+                label: 'Show project config reminder',
+                name: 'applyProjectConfig',
+                checked: formValues.applyProjectConfig,
+                instructions: 'The plugin still does not apply project config inline. This only controls whether the reminder is shown after field migration.',
+            }) }}
+
+            <div class="buttons">
+                <button type="submit" class="btn submit">Run migration</button>
+            </div>
+        </form>
+
+        {% if result is defined and result %}
+            <div class="lm-run-output">
+                <div class="readable">
+                    <p><strong>Status:</strong> {{ result.ok ? 'Completed' : 'Finished with issues' }}</p>
+                </div>
+
+                {% for message in result.messages ?? [] %}
+                    <div class="lm-message lm-message--{{ message.type|e }}">
+                        <pre>{{- message.text -}}</pre>
+                    </div>
+                {% endfor %}
+
+                {% for run in result.runs ?? [] %}
+                    <div class="lm-run-card">
+                        <h2>{{ run.action|replace({'-': ' '})|title }}</h2>
+                        {% if run.summary is not empty %}
+                            <pre>{{- run.summary|json_encode(constant('JSON_PRETTY_PRINT')) -}}</pre>
+                        {% endif %}
+                        <div class="lm-meta">
+                            <div>Report: {{ run.reportPath }}</div>
+                            <div>JSON: {{ run.jsonPath }}</div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}
